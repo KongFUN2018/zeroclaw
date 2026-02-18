@@ -1,7 +1,8 @@
 use super::traits::{Channel, ChannelMessage};
 use async_trait::async_trait;
-use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 /// Lark/Feishu base URL
@@ -54,6 +55,70 @@ impl LarkChannel {
     /// Check if a user is allowed (supports user_id, open_id, union_id)
     fn is_user_allowed(&self, user_id: &str) -> bool {
         self.allowed_users.iter().any(|u| u == "*" || u == user_id)
+    }
+
+    /// Get or refresh tenant access token (2 hour expiry)
+    pub async fn get_tenant_access_token(&self) -> Option<String> {
+        // Check if we have a valid cached token
+        {
+            let token_guard = self.tenant_access_token.lock().await;
+            let expiry_guard = self.token_expiry.lock().await;
+
+            if let (Some(token), Some(expiry)) = (&*token_guard, *expiry_guard) {
+                if expiry > Instant::now() + Duration::from_secs(300) {
+                    // Token is valid for at least 5 more minutes
+                    return Some(token.clone());
+                }
+            }
+        } // Drop locks before making HTTP request
+
+        // Need to refresh token
+        let url = format!("{}/open-apis/auth/v3/tenant_access_token/internal", self.base_url());
+
+        let body = serde_json::json!({
+            "app_id": self.app_id,
+            "app_secret": self.app_secret
+        });
+
+        let resp = match self.client.post(&url).json(&body).send().await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("Failed to get tenant access token: {e}");
+                return None;
+            }
+        };
+
+        if !resp.status().is_success() {
+            tracing::error!("Tenant access token API returned error: {}", resp.status());
+            return None;
+        }
+
+        let data: serde_json::Value = match resp.json().await {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::error!("Failed to parse token response: {e}");
+                return None;
+            }
+        };
+
+        let token = data.get("tenant_access_token")
+            .and_then(|t| t.as_str())
+            .map(String::from);
+
+        let expire = data.get("expire")
+            .and_then(|e| e.as_i64())
+            .unwrap_or(7200); // Default 2 hours
+
+        if let Some(ref token_str) = token {
+            let expiry = Instant::now() + Duration::from_secs(expire as u64 - 300); // Refresh 5 min early
+
+            *self.tenant_access_token.lock().await = Some(token_str.clone());
+            *self.token_expiry.lock().await = Some(expiry);
+
+            tracing::debug!("Refreshed tenant access token, expires in {}s", expire);
+        }
+
+        token
     }
 }
 
@@ -145,5 +210,31 @@ mod tests {
         assert!(ch.is_user_allowed("ou_xxx"));
         assert!(ch.is_user_allowed("on_yyy"));
         assert!(!ch.is_user_allowed("ou_zzz"));
+    }
+
+    #[tokio::test]
+    async fn lark_get_tenant_access_token_returns_cached() {
+        let ch = LarkChannel::new(
+            "fake_app_id".into(),
+            "fake_secret".into(),
+            None,
+            None,
+            vec![],
+            false,
+        );
+
+        // First call - will attempt to fetch (and fail with fake credentials)
+        let result1 = ch.get_tenant_access_token().await;
+        assert!(result1.is_none());
+
+        // Manually set a token to test caching
+        let token = "test_token".to_string();
+        let expiry = Instant::now() + Duration::from_secs(3600);
+        *ch.tenant_access_token.lock().await = Some(token.clone());
+        *ch.token_expiry.lock().await = Some(expiry);
+
+        // Second call - should return cached token
+        let result2 = ch.get_tenant_access_token().await;
+        assert_eq!(result2, Some(token));
     }
 }
