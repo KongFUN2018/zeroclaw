@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
+use uuid::Uuid;
 
 /// Lark/Feishu base URL
 const LARK_BASE_URL: &str = "https://open.larksuite.com";
@@ -118,6 +119,93 @@ impl LarkChannel {
         }
 
         token
+    }
+
+    /// Parse incoming Lark/Feishu webhook event and extract messages
+    pub fn parse_webhook_payload(&self, payload: &serde_json::Value) -> Vec<ChannelMessage> {
+        let mut messages = Vec::new();
+
+        // Check event type
+        let event_type = payload.get("header")
+            .and_then(|h| h.get("event_type"))
+            .and_then(|t| t.as_str());
+
+        if event_type != Some("im.message.receive_v1") {
+            return messages;
+        }
+
+        let event = match payload.get("event") {
+            Some(e) => e,
+            None => return messages,
+        };
+
+        // Extract sender ID
+        let sender = event.get("sender")
+            .and_then(|s| s.get("sender_id"))
+            .and_then(|id| id.get("user_id"))
+            .and_then(|u| u.as_str());
+
+        let sender = match sender {
+            Some(s) => s,
+            None => return messages,
+        };
+
+        // Check authorization
+        if !self.is_user_allowed(sender) {
+            tracing::warn!(
+                "Lark: ignoring message from unauthorized user: {sender}. \
+                Add to allowed_users in config.toml."
+            );
+            return messages;
+        }
+
+        // Extract message content
+        let message_obj = match event.get("message") {
+            Some(m) => m,
+            None => return messages,
+        };
+
+        let message_id = message_obj.get("message_id")
+            .and_then(|m| m.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        let content_str = message_obj.get("content")
+            .and_then(|c| c.as_str())
+            .unwrap_or("{}");
+
+        // Parse content JSON (Lark stores content as JSON string)
+        let content_json: serde_json::Value = match serde_json::from_str(content_str) {
+            Ok(j) => j,
+            Err(e) => {
+                tracing::warn!("Failed to parse message content JSON: {e}");
+                return messages;
+            }
+        };
+
+        let text = content_json.get("text")
+            .and_then(|t| t.as_str())
+            .unwrap_or("");
+
+        // Skip empty messages
+        if text.is_empty() {
+            return messages;
+        }
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        messages.push(ChannelMessage {
+            id: message_id,
+            sender: sender.to_string(),
+            content: text.to_string(),
+            channel: self.name().to_string(),
+            timestamp,
+        });
+
+        messages
     }
 }
 
@@ -311,5 +399,85 @@ mod tests {
         let err = result.unwrap_err().to_string();
         // Network or HTTP errors should contain these keywords
         assert!(err.contains("error") || err.contains("failed") || err.contains("connect") || err.contains("http") || err.contains("reqwest"));
+    }
+
+    #[test]
+    fn lark_parse_webhook_extracts_text_message() {
+        let ch = LarkChannel::new(
+            "cli_xxx".into(),
+            "secret".into(),
+            Some("encrypt_key".into()),
+            Some("verify_token".into()),
+            vec!["ou_xxx".into()],
+            false,
+        );
+
+        let payload = serde_json::json!({
+            "schema": "2.0",
+            "header": {
+                "event_id": "evn_xxx",
+                "timestamp": "1.7000000000000000000000000000E+18",
+                "event_type": "im.message.receive_v1",
+                "tenant_key": "xxx",
+                "app_id": "cli_xxx"
+            },
+            "event": {
+                "sender": {
+                    "sender_id": {
+                        "user_id": "ou_xxx"
+                    }
+                },
+                "message": {
+                    "message_id": "om_xxx",
+                    "chat_type": "p2p",
+                    "chat_id": "oc_xxx",
+                    "content": "{\"text\":\"Hello, bot!\"}"
+                }
+            }
+        });
+
+        let messages = ch.parse_webhook_payload(&payload);
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].sender, "ou_xxx");
+        assert_eq!(messages[0].content, "Hello, bot!");
+    }
+
+    #[test]
+    fn lark_parse_webhook_filters_unauthorized_users() {
+        let ch = LarkChannel::new(
+            "cli_xxx".into(),
+            "secret".into(),
+            None,
+            None,
+            vec!["ou_yyy".into()], // Different user
+            false,
+        );
+
+        let payload = serde_json::json!({
+            "schema": "2.0",
+            "header": {
+                "event_id": "evn_xxx",
+                "timestamp": "1.7000000000000000000000000000E+18",
+                "event_type": "im.message.receive_v1",
+                "tenant_key": "xxx",
+                "app_id": "cli_xxx"
+            },
+            "event": {
+                "sender": {
+                    "sender_id": {
+                        "user_id": "ou_xxx"
+                    }
+                },
+                "message": {
+                    "message_id": "om_xxx",
+                    "chat_type": "p2p",
+                    "chat_id": "oc_xxx",
+                    "content": "{\"text\":\"Hello!\"}"
+                }
+            }
+        });
+
+        let messages = ch.parse_webhook_payload(&payload);
+        assert_eq!(messages.len(), 0); // Unauthorized user filtered out
     }
 }
