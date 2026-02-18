@@ -1100,6 +1100,7 @@ mod tests {
             idempotency_store: Arc::new(IdempotencyStore::new(Duration::from_secs(300))),
             whatsapp: None,
             whatsapp_app_secret: None,
+            lark: None,
         }
     }
 
