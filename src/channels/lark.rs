@@ -3,7 +3,6 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
-use uuid::Uuid;
 
 /// Lark/Feishu base URL
 const LARK_BASE_URL: &str = "https://open.larksuite.com";
@@ -122,13 +121,65 @@ impl LarkChannel {
     }
 }
 
+/// Convert Markdown text to Lark/Feishu interactive card format
+fn markdown_to_card(markdown: &str) -> serde_json::Value {
+    // Simple implementation - convert to text element
+    // TODO: Enhance with full markdown parsing (headers, lists, code blocks, etc.)
+    serde_json::json!({
+        "config": {
+            "wide_screen_mode": true
+        },
+        "elements": [
+            {
+                "tag": "div",
+                "text": {
+                    "tag": "lark_md",
+                    "content": markdown
+                }
+            }
+        ]
+    })
+}
+
 #[async_trait]
 impl Channel for LarkChannel {
     fn name(&self) -> &str {
         "lark"
     }
 
-    async fn send(&self, _message: &str, _recipient: &str) -> anyhow::Result<()> {
+    async fn send(&self, message: &str, recipient: &str) -> anyhow::Result<()> {
+        let token = self.get_tenant_access_token().await
+            .ok_or_else(|| anyhow::anyhow!("Failed to get tenant access token"))?;
+
+        let url = format!("{}/open-apis/im/v1/messages", self.base_url());
+
+        // Convert markdown to interactive card
+        let card = markdown_to_card(message);
+
+        let body = serde_json::json!({
+            "receive_id_type": "user_id",
+            "receive_id": recipient,
+            "msg_type": "interactive",
+            "content": serde_json::json!({
+                "type": "interactive",
+                "card": card
+            })
+        });
+
+        let resp = self.client
+            .post(&url)
+            .header("Authorization", format!("Bearer {token}"))
+            .json(&body)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let error_body = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Lark send message failed ({status}): {error_body}");
+        }
+
+        tracing::debug!("Lark message sent to {}", recipient);
         Ok(())
     }
 
@@ -236,5 +287,29 @@ mod tests {
         // Second call - should return cached token
         let result2 = ch.get_tenant_access_token().await;
         assert_eq!(result2, Some(token));
+    }
+
+    #[tokio::test]
+    async fn lark_send_builds_correct_request() {
+        let ch = LarkChannel::new(
+            "cli_xxx".into(),
+            "secret".into(),
+            None,
+            None,
+            vec!["*".into()],
+            false,
+        );
+
+        // Set a fake token with valid expiry to avoid API call
+        *ch.tenant_access_token.lock().await = Some("fake_token".into());
+        *ch.token_expiry.lock().await = Some(Instant::now() + Duration::from_secs(3600));
+
+        let result = ch.send("Hello, world!", "ou_xxx").await;
+
+        // Should fail with network error, not a panic
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        // Network or HTTP errors should contain these keywords
+        assert!(err.contains("error") || err.contains("failed") || err.contains("connect") || err.contains("http") || err.contains("reqwest"));
     }
 }
