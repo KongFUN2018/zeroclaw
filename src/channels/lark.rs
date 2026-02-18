@@ -278,6 +278,25 @@ impl Channel for LarkChannel {
         // Webhook mode - listen is a no-op
         Ok(())
     }
+
+    async fn health_check(&self) -> bool {
+        let _token = match self.get_tenant_access_token().await {
+            Some(t) => t,
+            None => return false,
+        };
+
+        let url = format!("{}/open-apis/auth/v3/tenant_access_token/internal", self.base_url());
+
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            self.client.get(&url).send()
+        )
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .map(|resp| resp.status().is_success())
+        .unwrap_or(false)
+    }
 }
 
 #[cfg(test)]
@@ -479,5 +498,21 @@ mod tests {
 
         let messages = ch.parse_webhook_payload(&payload);
         assert_eq!(messages.len(), 0); // Unauthorized user filtered out
+    }
+
+    #[tokio::test]
+    async fn lark_health_check_returns_false_without_credentials() {
+        let ch = LarkChannel::new(
+            "invalid".into(),
+            "invalid".into(),
+            None,
+            None,
+            vec![],
+            false,
+        );
+
+        // Should not panic, should return false (API will fail)
+        let result = ch.health_check().await;
+        assert!(!result);
     }
 }
