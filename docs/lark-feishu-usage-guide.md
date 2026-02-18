@@ -105,7 +105,6 @@ use_feishu = false                         # true=Feishu, false=Lark
 
 | 参数 | 类型 | 必需 | 说明 |
 |------|------|------|------|
-| `app_id` | string | ✅ | 应用 ID，格式 `cli_*` |
 | `app_secret` | string | ✅ | 应用密钥 |
 | `encrypt_key` | string | ❌ | AES 加密密钥（hex 格式），生产环境推荐 |
 | `verification_token` | string | ❌ | Webhook 验证令牌 |
