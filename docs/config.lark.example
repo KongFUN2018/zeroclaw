@@ -1,0 +1,17 @@
+# Lark/Feishu Configuration Example
+# To enable: copy this section to your ~/.zeroclaw/config.toml
+
+[channels_config.lark]
+app_id = "cli_xxxxxxxxxxxxx"              # Your Lark/Feishu App ID
+app_secret = "xxxxxxxxxxxxxxxxxxxx"        # Your Lark/Feishu App Secret
+encrypt_key = ""                           # Optional: AES encryption key for webhook (hex string)
+verification_token = ""                    # Optional: webhook verification token
+allowed_users = ["ou_xxx", "on_yyy"]      # Allowed user IDs (user_id/open_id/union_id)
+use_feishu = false                         # Set to true for Feishu (Chinese), false for Lark (International)
+
+# Notes:
+# - Get app_id and app_secret from https://open.feishu.cn/app (Feishu) or https://open.larksuite.com/app (Lark)
+# - Webhook endpoint: https://your-domain/lark/webhook or /feishu/webhook
+# - encrypt_key and verification_token are optional but recommended for production
+# - For Feishu (Chinese version), set use_feishu = true
+# - allowed_users supports wildcards: ["*"] allows all users

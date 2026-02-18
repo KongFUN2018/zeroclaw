@@ -3,6 +3,7 @@ pub mod discord;
 pub mod email_channel;
 pub mod imessage;
 pub mod irc;
+pub mod lark;
 pub mod matrix;
 pub mod slack;
 pub mod telegram;
@@ -14,6 +15,7 @@ pub use discord::DiscordChannel;
 pub use email_channel::EmailChannel;
 pub use imessage::IMessageChannel;
 pub use irc::IrcChannel;
+pub use lark::LarkChannel;
 pub use matrix::MatrixChannel;
 pub use slack::SlackChannel;
 pub use telegram::TelegramChannel;
@@ -504,6 +506,7 @@ pub fn handle_command(command: crate::ChannelCommands, config: &Config) -> Resul
                 ("iMessage", config.channels_config.imessage.is_some()),
                 ("Matrix", config.channels_config.matrix.is_some()),
                 ("WhatsApp", config.channels_config.whatsapp.is_some()),
+                ("Lark/Feishu", config.channels_config.lark.is_some()),
                 ("Email", config.channels_config.email.is_some()),
                 ("IRC", config.channels_config.irc.is_some()),
             ] {
@@ -609,6 +612,20 @@ pub async fn doctor_channels(config: Config) -> Result<()> {
                 wa.phone_number_id.clone(),
                 wa.verify_token.clone(),
                 wa.allowed_numbers.clone(),
+            )),
+        ));
+    }
+
+    if let Some(ref lark_cfg) = config.channels_config.lark {
+        channels.push((
+            "Lark",
+            Arc::new(LarkChannel::new(
+                lark_cfg.app_id.clone(),
+                lark_cfg.app_secret.clone(),
+                lark_cfg.encrypt_key.clone(),
+                lark_cfg.verification_token.clone(),
+                lark_cfg.allowed_users.clone(),
+                lark_cfg.use_feishu,
             )),
         ));
     }
@@ -854,6 +871,17 @@ pub async fn start_channels(config: Config) -> Result<()> {
             wa.phone_number_id.clone(),
             wa.verify_token.clone(),
             wa.allowed_numbers.clone(),
+        )));
+    }
+
+    if let Some(ref lark_cfg) = config.channels_config.lark {
+        channels.push(Arc::new(LarkChannel::new(
+            lark_cfg.app_id.clone(),
+            lark_cfg.app_secret.clone(),
+            lark_cfg.encrypt_key.clone(),
+            lark_cfg.verification_token.clone(),
+            lark_cfg.allowed_users.clone(),
+            lark_cfg.use_feishu,
         )));
     }
 
