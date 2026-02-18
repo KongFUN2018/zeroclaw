@@ -57,6 +57,10 @@ hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
 
+# AES encryption for Lark/Feishu webhook message decryption
+aes = "0.8"
+cbc = "0.1"
+
 # Landlock (Linux sandbox) - optional dependency
 landlock = { version = "0.4", optional = true }
 
