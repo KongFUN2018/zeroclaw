@@ -7,7 +7,7 @@
 //! - Request timeouts (30s) to prevent slow-loris attacks
 //! - Header sanitization (handled by axum/hyper)
 
-use crate::channels::{Channel, WhatsAppChannel};
+use crate::channels::{Channel, LarkChannel, WhatsAppChannel};
 use crate::config::Config;
 use crate::memory::{self, Memory, MemoryCategory};
 use crate::observability::{self, Observer};
@@ -207,6 +207,7 @@ pub struct AppState {
     pub whatsapp: Option<Arc<WhatsAppChannel>>,
     /// `WhatsApp` app secret for webhook signature verification (`X-Hub-Signature-256`)
     pub whatsapp_app_secret: Option<Arc<str>>,
+    pub lark: Option<Arc<LarkChannel>>,
 }
 
 /// Run the HTTP gateway using axum with proper HTTP/1.1 compliance.
@@ -325,6 +326,20 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         })
         .map(Arc::from);
 
+    // Lark/Feishu channel (if configured)
+    let lark_channel: Option<Arc<LarkChannel>> =
+        config.channels_config.lark.as_ref().map(|lark| {
+            Arc::new(LarkChannel::new(
+                lark.app_id.clone(),
+                lark.app_secret.clone(),
+                lark.encrypt_key.clone(),
+                lark.verification_token.clone(),
+                lark.allowed_users.clone(),
+                lark.use_feishu,
+            ))
+        });
+    let has_lark = lark_channel.is_some();
+
     // ── Pairing guard ──────────────────────────────────────
     let pairing = Arc::new(PairingGuard::new(
         config.gateway.require_pairing,
@@ -366,6 +381,12 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         println!("  GET  /whatsapp  — Meta webhook verification");
         println!("  POST /whatsapp  — WhatsApp message webhook");
     }
+    if has_lark {
+        println!("  GET  /lark/webhook   — Lark webhook verification");
+        println!("  POST /lark/webhook   — Lark message webhook");
+        println!("  GET  /feishu/webhook  — Feishu webhook verification");
+        println!("  POST /feishu/webhook  — Feishu message webhook");
+    }
     println!("  GET  /health    — health check");
     if let Some(code) = pairing.pairing_code() {
         println!();
@@ -402,15 +423,27 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         idempotency_store,
         whatsapp: whatsapp_channel,
         whatsapp_app_secret,
+        lark: lark_channel,
     };
 
     // Build router with middleware
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/health", get(handle_health))
         .route("/pair", post(handle_pair))
         .route("/webhook", post(handle_webhook))
         .route("/whatsapp", get(handle_whatsapp_verify))
-        .route("/whatsapp", post(handle_whatsapp_message))
+        .route("/whatsapp", post(handle_whatsapp_message));
+
+    // Add Lark/Feishu webhook routes if configured
+    if has_lark {
+        app = app
+            .route("/lark/webhook", get(lark_challenge_handler))
+            .route("/lark/webhook", post(lark_webhook_handler))
+            .route("/feishu/webhook", get(lark_challenge_handler))
+            .route("/feishu/webhook", post(lark_webhook_handler));
+    }
+
+    let app = app
         .with_state(state)
         .layer(RequestBodyLimitLayer::new(MAX_BODY_SIZE))
         .layer(TimeoutLayer::with_status_code(
@@ -746,6 +779,92 @@ async fn handle_whatsapp_message(
 
     // Acknowledge the webhook
     (StatusCode::OK, Json(serde_json::json!({"status": "ok"})))
+}
+
+/// Lark webhook verification challenge (GET)
+async fn lark_challenge_handler(
+    Query(params): Query<HashMap<String, String>>,
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let challenge = params.get("challenge").cloned().unwrap_or_default();
+    let token = params.get("token").map(|s| s.as_str()).unwrap_or("");
+
+    if let Some(ref lark) = state.lark {
+        if !lark.verify_challenge(token) {
+            return Err(StatusCode::UNAUTHORIZED);
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "challenge": challenge })))
+}
+
+/// Lark webhook message receiver (POST)
+async fn lark_webhook_handler(
+    State(state): State<AppState>,
+    Json(payload): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let lark = state.lark.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+    // Handle URL verification (some Lark/Feishu versions use POST for challenge)
+    if let Some(challenge) = payload.get("challenge")
+        .and_then(|c| c.as_str())
+    {
+        if let Some(token) = payload.get("token")
+            .and_then(|t| t.as_str())
+        {
+            if !lark.verify_challenge(token) {
+                return Err(StatusCode::UNAUTHORIZED);
+            }
+        }
+        return Ok(Json(serde_json::json!({ "challenge": challenge })));
+    }
+
+    // Decrypt payload if encrypted
+    let payload = if let Some(encrypt) = payload.get("encrypt")
+        .and_then(|e| e.as_str())
+    {
+        let decrypted = lark.decrypt_webhook_payload(encrypt)
+            .ok_or(StatusCode::BAD_REQUEST)?;
+        serde_json::from_str(&decrypted).ok()
+    } else {
+        Some(payload)
+    };
+
+    let payload = payload.ok_or(StatusCode::BAD_REQUEST)?;
+
+    // Parse messages
+    let messages = lark.parse_webhook_payload(&payload);
+
+    // Process each message
+    for msg in messages {
+        let memory_key = whatsapp_memory_key(&msg);  // Reuse WhatsApp memory key format
+
+        if state.auto_save {
+            let _ = state
+                .mem
+                .store(
+                    &memory_key,
+                    &msg.content,
+                    memory::MemoryCategory::Conversation,
+                )
+                .await;
+        }
+
+        let reply = match gateway_agent_reply(&state, &msg.content).await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::error!("Lark message processing error: {e}");
+                format!("⚠️ Error: {e}")
+            }
+        };
+
+        // Send reply via Lark API
+        if let Err(e) = lark.send(&reply, &msg.sender).await {
+            tracing::error!("Failed to send Lark reply: {e}");
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "code": 0 })))
 }
 
 #[cfg(test)]

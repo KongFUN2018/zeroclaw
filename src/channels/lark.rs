@@ -207,6 +207,50 @@ impl LarkChannel {
 
         messages
     }
+
+    /// Decrypt Lark/Feishu webhook payload (if encrypt_key is configured)
+    pub fn decrypt_webhook_payload(&self, encrypt: &str) -> Option<String> {
+        use aes::cipher::{BlockDecryptMut, KeyIvInit};
+        use cbc::Decryptor;
+
+        let key = &self.encrypt_key.as_ref()?;
+
+        // Lark uses AES-256-CBC with key and IV derived from encrypt_key
+        // Key is first 32 bytes, IV is next 16 bytes (hex decoded)
+        let key_bytes = hex::decode(key).ok()?;
+        if key_bytes.len() < 48 {
+            return None;
+        }
+
+        let (cipher_key, iv) = key_bytes.split_at(32);
+        let ciphertext = hex::decode(encrypt).ok()?;
+
+        type Aes256CbcDec = Decryptor<aes::Aes256>;
+
+        let mut buf = ciphertext;
+        let ct_len = buf.len();
+
+        if ct_len % 16 != 0 || ct_len == 0 {
+            return None;
+        }
+
+        let cipher_key_array: &[u8; 32] = cipher_key.try_into().ok()?;
+        let iv_array: &[u8; 16] = iv[..16].try_into().ok()?;
+
+        let decryptor = Aes256CbcDec::new(cipher_key_array.into(), iv_array.into());
+        let decrypted = decryptor.decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut buf).ok()?;
+
+        String::from_utf8(decrypted.to_vec()).ok()
+    }
+
+    /// Verify webhook URL challenge token
+    pub fn verify_challenge(&self, token: &str) -> bool {
+        match &self.verification_token {
+            Some(t) if t == token => true,
+            None => true, // If no token configured, accept all
+            _ => false,
+        }
+    }
 }
 
 /// Convert Markdown text to Lark/Feishu interactive card format
