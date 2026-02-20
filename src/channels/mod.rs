@@ -617,17 +617,16 @@ pub async fn doctor_channels(config: Config) -> Result<()> {
     }
 
     if let Some(ref lark_cfg) = config.channels_config.lark {
-        channels.push((
-            "Lark",
-            Arc::new(LarkChannel::new(
-                lark_cfg.app_id.clone(),
-                lark_cfg.app_secret.clone(),
-                lark_cfg.encrypt_key.clone(),
-                lark_cfg.verification_token.clone(),
-                lark_cfg.allowed_users.clone(),
-                lark_cfg.use_feishu,
-            )),
-        ));
+        let lark = LarkChannel::new(
+            lark_cfg.app_id.clone(),
+            lark_cfg.app_secret.clone(),
+            lark_cfg.encrypt_key.clone(),
+            lark_cfg.verification_token.clone(),
+            lark_cfg.allowed_users.clone(),
+            lark_cfg.use_feishu,
+        );
+        let lark = lark.with_connection_mode(lark_cfg.connection_mode.clone(), lark_cfg.poll_interval_secs);
+        channels.push(("Lark", Arc::new(lark)));
     }
 
     if let Some(ref email_cfg) = config.channels_config.email {
@@ -875,14 +874,16 @@ pub async fn start_channels(config: Config) -> Result<()> {
     }
 
     if let Some(ref lark_cfg) = config.channels_config.lark {
-        channels.push(Arc::new(LarkChannel::new(
+        let lark = LarkChannel::new(
             lark_cfg.app_id.clone(),
             lark_cfg.app_secret.clone(),
             lark_cfg.encrypt_key.clone(),
             lark_cfg.verification_token.clone(),
             lark_cfg.allowed_users.clone(),
             lark_cfg.use_feishu,
-        )));
+        );
+        let lark = lark.with_connection_mode(lark_cfg.connection_mode.clone(), lark_cfg.poll_interval_secs);
+        channels.push(Arc::new(lark));
     }
 
     if let Some(ref email_cfg) = config.channels_config.email {

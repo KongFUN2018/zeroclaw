@@ -999,6 +999,23 @@ pub struct LarkConfig {
     /// Whether to use the Feishu (Chinese) endpoint instead of Lark (International)
     #[serde(default)]
     pub use_feishu: bool,
+    /// Connection mode: "webhook" (default), "polling", or "long_connection"
+    /// - webhook: Feishu pushes events to your server (requires public URL)
+    /// - polling: Client pulls events periodically (no public URL needed)
+    /// - long_connection: WebSocket persistent connection (no public URL needed, real-time)
+    #[serde(default = "default_lark_connection_mode")]
+    pub connection_mode: String,
+    /// Polling interval in seconds (only used in polling mode, default: 5)
+    #[serde(default = "default_lark_poll_interval")]
+    pub poll_interval_secs: u64,
+}
+
+fn default_lark_connection_mode() -> String {
+    "webhook".to_string()
+}
+
+fn default_lark_poll_interval() -> u64 {
+    5
 }
 
 // ── Security Config ─────────────────────────────────────────────────
@@ -2442,6 +2459,8 @@ default_temperature = 0.7
             verification_token: Some("verify_token".into()),
             allowed_users: vec!["user_123".into(), "user_456".into()],
             use_feishu: true,
+            connection_mode: "webhook".into(),
+            poll_interval_secs: 5,
         };
         let json = serde_json::to_string(&lc).unwrap();
         let parsed: LarkConfig = serde_json::from_str(&json).unwrap();
@@ -2462,6 +2481,8 @@ default_temperature = 0.7
             verification_token: Some("verify_token".into()),
             allowed_users: vec!["*".into()],
             use_feishu: false,
+            connection_mode: default_lark_connection_mode(),
+            poll_interval_secs: default_lark_poll_interval(),
         };
         let toml_str = toml::to_string(&lc).unwrap();
         let parsed: LarkConfig = toml::from_str(&toml_str).unwrap();

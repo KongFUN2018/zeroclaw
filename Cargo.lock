@@ -3619,6 +3619,7 @@ dependencies = [
  "async-trait",
  "axum",
  "base64",
+ "bytes",
  "cbc",
  "chacha20poly1305",
  "chrono",
@@ -3641,6 +3642,7 @@ dependencies = [
  "opentelemetry-otlp",
  "opentelemetry_sdk",
  "prometheus",
+ "rand 0.8.5",
  "reqwest",
  "rusqlite",
  "rustls",
@@ -3660,6 +3662,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "webpki-roots 1.0.6",
 ]

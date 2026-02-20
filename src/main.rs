@@ -48,6 +48,7 @@ mod hardware;
 mod health;
 mod heartbeat;
 mod identity;
+mod lark_ws;
 mod integrations;
 mod memory;
 mod migration;

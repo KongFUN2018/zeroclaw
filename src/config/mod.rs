@@ -44,6 +44,8 @@ mod tests {
             verification_token: None,
             allowed_users: vec![],
             use_feishu: false,
+            connection_mode: "webhook".into(),
+            poll_interval_secs: 5,
         };
 
         assert_eq!(telegram.allowed_users.len(), 1);

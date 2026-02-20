@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package lark_ws;
+
+// Header represents a single key-value pair in the frame headers
+message Header {
+  string key = 1;
+  string value = 2;
+}
+
+// Frame represents a WebSocket message frame using Protocol Buffers encoding
+message Frame {
+  uint64 seq_id = 1;           // Sequence ID for ordering
+  uint64 log_id = 2;           // Log ID for tracing
+  int32 service = 3;           // Service ID (from WebSocket URL)
+  int32 method = 4;            // Method: 0 = Control, 1 = Data
+  repeated Header headers = 5;  // Frame headers
+
+  string payload_encoding = 6;  // Payload encoding (optional)
+  string payload_type = 7;      // Payload type (optional)
+
+  bytes payload = 8;            // Frame payload (actual data)
+  string log_id_new = 9;        // New log ID format (optional)
+}

@@ -61,6 +61,11 @@ hex = "0.4"
 aes = "0.8"
 cbc = "0.1"
 
+# Protocol Buffers for Lark/Feishu WebSocket long connection
+bytes = "1.10"
+url = "2.5"
+rand = "0.8"
+
 # Landlock (Linux sandbox) - optional dependency
 landlock = { version = "0.4", optional = true }
 

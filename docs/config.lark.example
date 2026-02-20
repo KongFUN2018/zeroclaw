@@ -9,9 +9,20 @@ verification_token = ""                    # Optional: webhook verification toke
 allowed_users = ["ou_xxx", "on_yyy"]      # Allowed user IDs (user_id/open_id/union_id)
 use_feishu = false                         # Set to true for Feishu (Chinese), false for Lark (International)
 
-# Notes:
+# Webhook Mode (default, requires public URL)
 # - Get app_id and app_secret from https://open.feishu.cn/app (Feishu) or https://open.larksuite.com/app (Lark)
 # - Webhook endpoint: https://your-domain/lark/webhook or /feishu/webhook
 # - encrypt_key and verification_token are optional but recommended for production
+
+# Polling Mode (optional, no public URL required)
+# poll_mode = true                          # Enable polling mode (default: false)
+# poll_interval_secs = 5                    # Polling interval in seconds (default: 5)
+
+# Notes:
 # - For Feishu (Chinese version), set use_feishu = true
 # - allowed_users supports wildcards: ["*"] allows all users
+# - Polling mode is useful for:
+#   * Local/network-restricted environments without public internet access
+#   * Development and testing without tunnel setup
+#   * Environments where webhook configuration is not possible
+# - Webhook mode is preferred for production due to lower latency and resource usage

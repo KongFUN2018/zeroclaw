@@ -795,7 +795,8 @@ async fn lark_challenge_handler(
         }
     }
 
-    Ok(Json(serde_json::json!({ "challenge": challenge })))
+    // Feishu requires response format: {"code": 0, "challenge": "..."}
+    Ok(Json(serde_json::json!({ "code": 0, "challenge": challenge })))
 }
 
 /// Lark webhook message receiver (POST)
@@ -803,29 +804,45 @@ async fn lark_webhook_handler(
     State(state): State<AppState>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    tracing::info!("Received Lark/Feishu webhook payload: {}", serde_json::to_string(&payload).unwrap_or_default());
+
     let lark = state.lark.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
     // Handle URL verification (some Lark/Feishu versions use POST for challenge)
     if let Some(challenge) = payload.get("challenge")
         .and_then(|c| c.as_str())
     {
+        tracing::info!("Handling URL verification challenge: {}", challenge);
+
         if let Some(token) = payload.get("token")
             .and_then(|t| t.as_str())
         {
             if !lark.verify_challenge(token) {
+                tracing::warn!("Token verification failed for token: {}", token);
                 return Err(StatusCode::UNAUTHORIZED);
             }
         }
-        return Ok(Json(serde_json::json!({ "challenge": challenge })));
+        // Feishu requires response format: {"code": 0, "challenge": "..."}
+        let response = serde_json::json!({ "code": 0, "challenge": challenge });
+        tracing::info!("Sending verification response: {}", serde_json::to_string(&response).unwrap_or_default());
+        return Ok(Json(response));
     }
 
     // Decrypt payload if encrypted
     let payload = if let Some(encrypt) = payload.get("encrypt")
         .and_then(|e| e.as_str())
     {
-        let decrypted = lark.decrypt_webhook_payload(encrypt)
-            .ok_or(StatusCode::BAD_REQUEST)?;
-        serde_json::from_str(&decrypted).ok()
+        tracing::info!("Attempting to decrypt encrypted payload ({} chars)", encrypt.len());
+        match lark.decrypt_webhook_payload(encrypt) {
+            Some(decrypted) => {
+                tracing::info!("Successfully decrypted payload: {}", decrypted);
+                serde_json::from_str(&decrypted).ok()
+            }
+            None => {
+                tracing::error!("Failed to decrypt payload with encrypt_key");
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
     } else {
         Some(payload)
     };
