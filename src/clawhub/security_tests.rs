@@ -235,6 +235,72 @@ fn test_missing_output_definitions() {
     assert!(findings.iter().any(|f| f.message.contains("output")));
 }
 
+// Dependency chain tests
+#[test]
+fn test_dependency_without_hash() {
+    let rule = super::security::rules::DependencyChainRule;
+    let skill = SkillSIF {
+        dependencies: Some(vec![
+            Dependency {
+                name: "some-skill".to_string(),
+                version: "1.0.0".to_string(),
+                optional: None,
+                hash: None,  // Missing hash
+            }
+        ]),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("hash")));
+}
+
+#[test]
+fn test_dependency_without_upper_bound() {
+    let rule = super::security::rules::DependencyChainRule;
+    let skill = SkillSIF {
+        dependencies: Some(vec![
+            Dependency {
+                name: "some-skill".to_string(),
+                version: ">=1.0.0".to_string(),  // No upper bound
+                optional: None,
+                hash: Some("abc123".to_string()),
+            }
+        ]),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("upper bound")));
+}
+
+#[test]
+fn test_chain_step_undeclared_skill() {
+    let rule = super::security::rules::DependencyChainRule;
+    let skill = SkillSIF {
+        logic: Some(Logic::Chain(ChainLogic {
+            steps: vec![
+                ChainStep {
+                    skill: "external-skill".to_string(),
+                    map_inputs: None,
+                }
+            ]
+        })),
+        dependencies: Some(vec![
+            Dependency {
+                name: "other-skill".to_string(),
+                version: "1.0.0".to_string(),
+                optional: None,
+                hash: Some("abc123".to_string()),
+            }
+        ]),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("undeclared")));
+}
+
 fn create_safe_skill() -> SkillSIF {
     SkillSIF {
         metadata: SifMetadata {
