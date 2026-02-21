@@ -1,11 +1,11 @@
 use super::traits::{Channel, ChannelMessage};
 use async_trait::async_trait;
+use base64::engine::general_purpose::URL_SAFE;
 use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use uuid::Uuid;
-use base64::engine::general_purpose::URL_SAFE;
 
 /// Lark/Feishu base URL
 const LARK_BASE_URL: &str = "https://open.larksuite.com";
@@ -109,7 +109,10 @@ impl LarkChannel {
                 for id in old_ids {
                     seen.remove(&id);
                 }
-                tracing::debug!("Lark: cleaned up old message IDs, current count: {}", seen.len());
+                tracing::debug!(
+                    "Lark: cleaned up old message IDs, current count: {}",
+                    seen.len()
+                );
             }
 
             false
@@ -132,7 +135,10 @@ impl LarkChannel {
         } // Drop locks before making HTTP request
 
         // Need to refresh token
-        let url = format!("{}/open-apis/auth/v3/tenant_access_token/internal", self.base_url());
+        let url = format!(
+            "{}/open-apis/auth/v3/tenant_access_token/internal",
+            self.base_url()
+        );
 
         let body = serde_json::json!({
             "app_id": self.app_id,
@@ -160,13 +166,12 @@ impl LarkChannel {
             }
         };
 
-        let token = data.get("tenant_access_token")
+        let token = data
+            .get("tenant_access_token")
             .and_then(|t| t.as_str())
             .map(String::from);
 
-        let expire = data.get("expire")
-            .and_then(|e| e.as_i64())
-            .unwrap_or(7200); // Default 2 hours
+        let expire = data.get("expire").and_then(|e| e.as_i64()).unwrap_or(7200); // Default 2 hours
 
         if let Some(ref token_str) = token {
             let expiry = Instant::now() + Duration::from_secs(expire as u64 - 300); // Refresh 5 min early
@@ -186,7 +191,8 @@ impl LarkChannel {
         let mut messages = Vec::new();
 
         // Check event type
-        let event_type = payload.get("header")
+        let event_type = payload
+            .get("header")
             .and_then(|h| h.get("event_type"))
             .and_then(|t| t.as_str());
 
@@ -200,7 +206,8 @@ impl LarkChannel {
         };
 
         // Extract sender open_id (NOTE: Feishu uses "open_id", not "user_id")
-        let sender_open_id = event.get("sender")
+        let sender_open_id = event
+            .get("sender")
             .and_then(|s| s.get("sender_id"))
             .and_then(|id| id.get("open_id"))
             .and_then(|u| u.as_str());
@@ -229,11 +236,13 @@ impl LarkChannel {
         };
 
         // Get chat_id for sending replies (prefer chat_id over open_id)
-        let chat_id = message_obj.get("chat_id")
+        let chat_id = message_obj
+            .get("chat_id")
             .and_then(|c| c.as_str())
             .unwrap_or(sender_open_id);
 
-        let message_id = message_obj.get("message_id")
+        let message_id = message_obj
+            .get("message_id")
             .and_then(|m| m.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| Uuid::new_v4().to_string());
@@ -244,11 +253,13 @@ impl LarkChannel {
             return messages;
         }
 
-        let msg_type = message_obj.get("message_type")
+        let msg_type = message_obj
+            .get("message_type")
             .and_then(|t| t.as_str())
             .unwrap_or("text");
 
-        let content_str = message_obj.get("content")
+        let content_str = message_obj
+            .get("content")
             .and_then(|c| c.as_str())
             .unwrap_or("{}");
 
@@ -263,7 +274,8 @@ impl LarkChannel {
                         return messages;
                     }
                 };
-                content_json.get("text")
+                content_json
+                    .get("text")
                     .and_then(|t| t.as_str())
                     .unwrap_or("")
                     .to_string()
@@ -288,9 +300,11 @@ impl LarkChannel {
         }
 
         // Get timestamp (Lark timestamps are in milliseconds)
-        let timestamp = if let Some(create_time_str) = message_obj.get("create_time")
-            .and_then(|t| t.as_str()) {
-            create_time_str.parse::<u64>()
+        let timestamp = if let Some(create_time_str) =
+            message_obj.get("create_time").and_then(|t| t.as_str())
+        {
+            create_time_str
+                .parse::<u64>()
                 .ok()
                 .map(|ms| ms / 1000)
                 .unwrap_or_else(|| {
@@ -435,7 +449,7 @@ impl LarkChannel {
                 if remaining.starts_with("_user_") {
                     // Skip past "@_user_"
                     let mut skip = 1 + "_user_".len(); // '@' + "_user_"
-                    // Skip digits
+                                                       // Skip digits
                     while i + skip < len && chars[i + skip].is_ascii_digit() {
                         skip += 1;
                     }
@@ -457,8 +471,8 @@ impl LarkChannel {
     /// Decrypt Lark/Feishu webhook payload (if encrypt_key is configured)
     pub fn decrypt_webhook_payload(&self, encrypt: &str) -> Option<String> {
         use aes::cipher::{BlockDecryptMut, KeyIvInit};
-        use cbc::Decryptor;
         use base64::Engine;
+        use cbc::Decryptor;
 
         let key_str = &self.encrypt_key.as_ref()?;
 
@@ -505,18 +519,16 @@ impl LarkChannel {
         let decryptor = Aes256CbcDec::new(&cipher_key_array.into(), (&iv_array).into());
 
         match decryptor.decrypt_padded_mut::<aes::cipher::block_padding::Pkcs7>(&mut buf) {
-            Ok(decrypted) => {
-                match String::from_utf8(decrypted.to_vec()) {
-                    Ok(s) => {
-                        tracing::debug!("Decrypted successfully: {} chars", s.len());
-                        Some(s)
-                    }
-                    Err(e) => {
-                        tracing::warn!("Decrypted data is not valid UTF-8: {}", e);
-                        None
-                    }
+            Ok(decrypted) => match String::from_utf8(decrypted.to_vec()) {
+                Ok(s) => {
+                    tracing::debug!("Decrypted successfully: {} chars", s.len());
+                    Some(s)
                 }
-            }
+                Err(e) => {
+                    tracing::warn!("Decrypted data is not valid UTF-8: {}", e);
+                    None
+                }
+            },
             Err(e) => {
                 tracing::warn!("Decryption failed: {}", e);
                 None
@@ -538,7 +550,10 @@ impl LarkChannel {
         &self,
         tx: tokio::sync::mpsc::Sender<ChannelMessage>,
     ) -> anyhow::Result<()> {
-        tracing::info!("Lark/Feishu polling mode started (interval: {}s)", self.poll_interval.as_secs());
+        tracing::info!(
+            "Lark/Feishu polling mode started (interval: {}s)",
+            self.poll_interval.as_secs()
+        );
 
         let mut cursor = String::new();
 
@@ -564,7 +579,8 @@ impl LarkChannel {
                 body["cursor"] = serde_json::Value::String(cursor.clone());
             }
 
-            let resp = match self.client
+            let resp = match self
+                .client
                 .post(&url)
                 .header("Authorization", format!("Bearer {token}"))
                 .json(&body)
@@ -625,7 +641,10 @@ impl LarkChannel {
             }
 
             // Check if we have more data
-            let has_more = data.get("has_more").and_then(|h| h.as_bool()).unwrap_or(false);
+            let has_more = data
+                .get("has_more")
+                .and_then(|h| h.as_bool())
+                .unwrap_or(false);
 
             if !has_more {
                 tokio::time::sleep(self.poll_interval).await;
@@ -638,7 +657,7 @@ impl LarkChannel {
         &self,
         tx: tokio::sync::mpsc::Sender<ChannelMessage>,
     ) -> anyhow::Result<()> {
-        use crate::lark_ws::{LarkWebSocketClient, EventHandler};
+        use crate::lark_ws::{EventHandler, LarkWebSocketClient};
 
         tracing::info!("Lark/Feishu WebSocket long connection mode starting...");
 
@@ -671,10 +690,12 @@ impl LarkChannel {
                     tracing::info!("Event format: unwrapped (direct event data)");
                     // Assume the entire JSON is the event data
                     Some(&event)
-                }.ok_or_else(|| anyhow::anyhow!("Missing event data"))?;
+                }
+                .ok_or_else(|| anyhow::anyhow!("Missing event data"))?;
 
                 // Check event type from header
-                let event_type = event.get("header")
+                let event_type = event
+                    .get("header")
                     .and_then(|h| h.get("event_type"))
                     .and_then(|t| t.as_str());
 
@@ -684,31 +705,45 @@ impl LarkChannel {
                     return Ok(());
                 }
 
-                tracing::info!("Event data: {}", serde_json::to_string(event_data).unwrap_or_default());
+                tracing::info!(
+                    "Event data: {}",
+                    serde_json::to_string(event_data).unwrap_or_default()
+                );
 
                 // NOTE: Use open_id instead of user_id (matches NullClaw)
-                let sender_open_id = event_data.get("sender")
+                let sender_open_id = event_data
+                    .get("sender")
                     .and_then(|s| s.get("sender_id"))
                     .and_then(|id| id.get("open_id"))
                     .and_then(|u| u.as_str())
                     .ok_or_else(|| anyhow::anyhow!("Missing sender.open_id"))?;
 
                 // Check authorization
-                if !self.allowed_users.iter().any(|u| u == "*" || u == sender_open_id) {
-                    tracing::warn!("Ignoring message from unauthorized user: {}", sender_open_id);
+                if !self
+                    .allowed_users
+                    .iter()
+                    .any(|u| u == "*" || u == sender_open_id)
+                {
+                    tracing::warn!(
+                        "Ignoring message from unauthorized user: {}",
+                        sender_open_id
+                    );
                     return Ok(());
                 }
 
                 // Extract message content
-                let message_obj = event_data.get("message")
+                let message_obj = event_data
+                    .get("message")
                     .ok_or_else(|| anyhow::anyhow!("Missing message field"))?;
 
                 // Get chat_id for sending replies
-                let chat_id = message_obj.get("chat_id")
+                let chat_id = message_obj
+                    .get("chat_id")
                     .and_then(|c| c.as_str())
                     .unwrap_or(sender_open_id);
 
-                let message_id = message_obj.get("message_id")
+                let message_id = message_obj
+                    .get("message_id")
                     .and_then(|m| m.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| Uuid::new_v4().to_string());
@@ -717,7 +752,10 @@ impl LarkChannel {
                 {
                     let mut seen = self.seen_messages.blocking_lock();
                     if seen.contains(&message_id) {
-                        tracing::info!("Lark WebSocket: skipping duplicate message_id {}", message_id);
+                        tracing::info!(
+                            "Lark WebSocket: skipping duplicate message_id {}",
+                            message_id
+                        );
                         return Ok(());
                     }
                     seen.insert(message_id.clone());
@@ -728,15 +766,20 @@ impl LarkChannel {
                         for id in old_ids {
                             seen.remove(&id);
                         }
-                        tracing::debug!("Lark WebSocket: cleaned up old message IDs, current count: {}", seen.len());
+                        tracing::debug!(
+                            "Lark WebSocket: cleaned up old message IDs, current count: {}",
+                            seen.len()
+                        );
                     }
                 }
 
-                let msg_type = message_obj.get("message_type")
+                let msg_type = message_obj
+                    .get("message_type")
                     .and_then(|t| t.as_str())
                     .unwrap_or("text");
 
-                let content_str = message_obj.get("content")
+                let content_str = message_obj
+                    .get("content")
                     .and_then(|c| c.as_str())
                     .unwrap_or("{}");
 
@@ -745,14 +788,16 @@ impl LarkChannel {
                     "text" => {
                         let content_json: serde_json::Value = serde_json::from_str(content_str)
                             .map_err(|e| anyhow::anyhow!("Failed to parse content JSON: {}", e))?;
-                        content_json.get("text")
+                        content_json
+                            .get("text")
                             .and_then(|t| t.as_str())
                             .unwrap_or("")
                             .to_string()
                     }
-                    "post" => {
-                        self.lark_channel.parse_post_content(content_str).unwrap_or_default()
-                    }
+                    "post" => self
+                        .lark_channel
+                        .parse_post_content(content_str)
+                        .unwrap_or_default(),
                     _ => {
                         return Ok(()); // Skip unsupported message types
                     }
@@ -806,10 +851,13 @@ impl LarkChannel {
             self.app_id.clone(),
             self.app_secret.clone(),
             self.use_feishu,
-        ).with_event_handler(handler);
+        )
+        .with_event_handler(handler);
 
         // Start the WebSocket connection (this will auto-reconnect)
-        ws_client.start().await
+        ws_client
+            .start()
+            .await
             .map_err(|e| anyhow::anyhow!("WebSocket client error: {}", e))?;
 
         Ok(())
@@ -847,11 +895,16 @@ impl Channel for LarkChannel {
     }
 
     async fn send(&self, message: &str, recipient: &str) -> anyhow::Result<()> {
-        let token = self.get_tenant_access_token().await
+        let token = self
+            .get_tenant_access_token()
+            .await
             .ok_or_else(|| anyhow::anyhow!("Failed to get tenant access token"))?;
 
         // Use chat_id as receive_id_type (matches NullClaw's approach)
-        let url = format!("{}/open-apis/im/v1/messages?receive_id_type=chat_id", self.base_url());
+        let url = format!(
+            "{}/open-apis/im/v1/messages?receive_id_type=chat_id",
+            self.base_url()
+        );
 
         // Build inner content JSON: {"text":"..."}
         let content_json = text_to_lark_content(message);
@@ -863,7 +916,8 @@ impl Channel for LarkChannel {
             escape_json_string(&content_json)
         );
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .header("Authorization", format!("Bearer {token}"))
             .header("Content-Type", "application/json; charset=utf-8")
@@ -881,10 +935,7 @@ impl Channel for LarkChannel {
         Ok(())
     }
 
-    async fn listen(
-        &self,
-        tx: tokio::sync::mpsc::Sender<ChannelMessage>,
-    ) -> anyhow::Result<()> {
+    async fn listen(&self, tx: tokio::sync::mpsc::Sender<ChannelMessage>) -> anyhow::Result<()> {
         match self.connection_mode.as_str() {
             MODE_WEBHOOK => {
                 // Webhook mode - listen is a no-op, events come via HTTP
@@ -894,14 +945,13 @@ impl Channel for LarkChannel {
                     tokio::time::sleep(Duration::from_secs(3600)).await;
                 }
             }
-            MODE_POLLING => {
-                LarkChannel::listen_polling(self, tx).await
-            }
-            MODE_LONG_CONNECTION => {
-                LarkChannel::listen_long_connection(self, tx).await
-            }
+            MODE_POLLING => LarkChannel::listen_polling(self, tx).await,
+            MODE_LONG_CONNECTION => LarkChannel::listen_long_connection(self, tx).await,
             _ => {
-                tracing::warn!("Unknown connection mode '{}', defaulting to webhook", self.connection_mode);
+                tracing::warn!(
+                    "Unknown connection mode '{}', defaulting to webhook",
+                    self.connection_mode
+                );
                 #[allow(clippy::empty_loop)]
                 loop {
                     tokio::time::sleep(Duration::from_secs(3600)).await;
@@ -916,17 +966,17 @@ impl Channel for LarkChannel {
             None => return false,
         };
 
-        let url = format!("{}/open-apis/auth/v3/tenant_access_token/internal", self.base_url());
+        let url = format!(
+            "{}/open-apis/auth/v3/tenant_access_token/internal",
+            self.base_url()
+        );
 
-        tokio::time::timeout(
-            Duration::from_secs(5),
-            self.client.get(&url).send()
-        )
-        .await
-        .ok()
-        .and_then(|r| r.ok())
-        .map(|resp| resp.status().is_success())
-        .unwrap_or(false)
+        tokio::time::timeout(Duration::from_secs(5), self.client.get(&url).send())
+            .await
+            .ok()
+            .and_then(|r| r.ok())
+            .map(|resp| resp.status().is_success())
+            .unwrap_or(false)
     }
 }
 
@@ -949,27 +999,13 @@ mod tests {
 
     #[test]
     fn lark_base_url_international() {
-        let ch = LarkChannel::new(
-            "cli_xxx".into(),
-            "secret".into(),
-            None,
-            None,
-            vec![],
-            false,
-        );
+        let ch = LarkChannel::new("cli_xxx".into(), "secret".into(), None, None, vec![], false);
         assert_eq!(ch.base_url(), LARK_BASE_URL);
     }
 
     #[test]
     fn lark_base_url_chinese() {
-        let ch = LarkChannel::new(
-            "cli_xxx".into(),
-            "secret".into(),
-            None,
-            None,
-            vec![],
-            true,
-        );
+        let ch = LarkChannel::new("cli_xxx".into(), "secret".into(), None, None, vec![], true);
         assert_eq!(ch.base_url(), FEISHU_BASE_URL);
     }
 
@@ -1048,7 +1084,13 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         // Network or HTTP errors should contain these keywords
-        assert!(err.contains("error") || err.contains("failed") || err.contains("connect") || err.contains("http") || err.contains("reqwest"));
+        assert!(
+            err.contains("error")
+                || err.contains("failed")
+                || err.contains("connect")
+                || err.contains("http")
+                || err.contains("reqwest")
+        );
     }
 
     #[tokio::test]

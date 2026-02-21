@@ -327,17 +327,16 @@ pub async fn run_gateway(host: &str, port: u16, config: Config) -> Result<()> {
         .map(Arc::from);
 
     // Lark/Feishu channel (if configured)
-    let lark_channel: Option<Arc<LarkChannel>> =
-        config.channels_config.lark.as_ref().map(|lark| {
-            Arc::new(LarkChannel::new(
-                lark.app_id.clone(),
-                lark.app_secret.clone(),
-                lark.encrypt_key.clone(),
-                lark.verification_token.clone(),
-                lark.allowed_users.clone(),
-                lark.use_feishu,
-            ))
-        });
+    let lark_channel: Option<Arc<LarkChannel>> = config.channels_config.lark.as_ref().map(|lark| {
+        Arc::new(LarkChannel::new(
+            lark.app_id.clone(),
+            lark.app_secret.clone(),
+            lark.encrypt_key.clone(),
+            lark.verification_token.clone(),
+            lark.allowed_users.clone(),
+            lark.use_feishu,
+        ))
+    });
     let has_lark = lark_channel.is_some();
 
     // ── Pairing guard ──────────────────────────────────────
@@ -796,7 +795,9 @@ async fn lark_challenge_handler(
     }
 
     // Feishu requires response format: {"code": 0, "challenge": "..."}
-    Ok(Json(serde_json::json!({ "code": 0, "challenge": challenge })))
+    Ok(Json(
+        serde_json::json!({ "code": 0, "challenge": challenge }),
+    ))
 }
 
 /// Lark webhook message receiver (POST)
@@ -804,19 +805,18 @@ async fn lark_webhook_handler(
     State(state): State<AppState>,
     Json(payload): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    tracing::info!("Received Lark/Feishu webhook payload: {}", serde_json::to_string(&payload).unwrap_or_default());
+    tracing::info!(
+        "Received Lark/Feishu webhook payload: {}",
+        serde_json::to_string(&payload).unwrap_or_default()
+    );
 
     let lark = state.lark.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
 
     // Handle URL verification (some Lark/Feishu versions use POST for challenge)
-    if let Some(challenge) = payload.get("challenge")
-        .and_then(|c| c.as_str())
-    {
+    if let Some(challenge) = payload.get("challenge").and_then(|c| c.as_str()) {
         tracing::info!("Handling URL verification challenge: {}", challenge);
 
-        if let Some(token) = payload.get("token")
-            .and_then(|t| t.as_str())
-        {
+        if let Some(token) = payload.get("token").and_then(|t| t.as_str()) {
             if !lark.verify_challenge(token) {
                 tracing::warn!("Token verification failed for token: {}", token);
                 return Err(StatusCode::UNAUTHORIZED);
@@ -824,15 +824,19 @@ async fn lark_webhook_handler(
         }
         // Feishu requires response format: {"code": 0, "challenge": "..."}
         let response = serde_json::json!({ "code": 0, "challenge": challenge });
-        tracing::info!("Sending verification response: {}", serde_json::to_string(&response).unwrap_or_default());
+        tracing::info!(
+            "Sending verification response: {}",
+            serde_json::to_string(&response).unwrap_or_default()
+        );
         return Ok(Json(response));
     }
 
     // Decrypt payload if encrypted
-    let payload = if let Some(encrypt) = payload.get("encrypt")
-        .and_then(|e| e.as_str())
-    {
-        tracing::info!("Attempting to decrypt encrypted payload ({} chars)", encrypt.len());
+    let payload = if let Some(encrypt) = payload.get("encrypt").and_then(|e| e.as_str()) {
+        tracing::info!(
+            "Attempting to decrypt encrypted payload ({} chars)",
+            encrypt.len()
+        );
         match lark.decrypt_webhook_payload(encrypt) {
             Some(decrypted) => {
                 tracing::info!("Successfully decrypted payload: {}", decrypted);
@@ -854,7 +858,7 @@ async fn lark_webhook_handler(
 
     // Process each message
     for msg in messages {
-        let memory_key = whatsapp_memory_key(&msg);  // Reuse WhatsApp memory key format
+        let memory_key = whatsapp_memory_key(&msg); // Reuse WhatsApp memory key format
 
         if state.auto_save {
             let _ = state

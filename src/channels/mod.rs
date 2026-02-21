@@ -625,7 +625,10 @@ pub async fn doctor_channels(config: Config) -> Result<()> {
             lark_cfg.allowed_users.clone(),
             lark_cfg.use_feishu,
         );
-        let lark = lark.with_connection_mode(lark_cfg.connection_mode.clone(), lark_cfg.poll_interval_secs);
+        let lark = lark.with_connection_mode(
+            lark_cfg.connection_mode.clone(),
+            lark_cfg.poll_interval_secs,
+        );
         channels.push(("Lark", Arc::new(lark)));
     }
 
@@ -882,7 +885,10 @@ pub async fn start_channels(config: Config) -> Result<()> {
             lark_cfg.allowed_users.clone(),
             lark_cfg.use_feishu,
         );
-        let lark = lark.with_connection_mode(lark_cfg.connection_mode.clone(), lark_cfg.poll_interval_secs);
+        let lark = lark.with_connection_mode(
+            lark_cfg.connection_mode.clone(),
+            lark_cfg.poll_interval_secs,
+        );
         channels.push(Arc::new(lark));
     }
 
