@@ -930,5 +930,8 @@ mod symlink_tests;
 pub mod complexity;
 pub mod selector;
 
+#[allow(unused_imports)]
 pub use complexity::ComplexityAnalyzer;
+
+#[allow(unused_imports)]
 pub use selector::{DisclosureLevel, SkillSelector};
