@@ -153,6 +153,88 @@ fn test_safe_code_passes() {
     assert!(findings.is_empty() || findings.iter().all(|f| f.severity != Severity::Critical));
 }
 
+// Interface boundary tests
+#[test]
+fn test_string_without_max_length() {
+    let rule = super::security::rules::InterfaceBoundaryRule;
+    let skill = SkillSIF {
+        interface: Some(Interface {
+            inputs: vec![InputParam {
+                name: "input".to_string(),
+                param_type: ParamType::String,
+                required: true,
+                min_length: None,
+                max_length: None,  // Missing max_length
+                item_schema: None,
+            }],
+            outputs: vec![],
+        }),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("max_length")));
+}
+
+#[test]
+fn test_array_without_item_schema() {
+    let rule = super::security::rules::InterfaceBoundaryRule;
+    let skill = SkillSIF {
+        interface: Some(Interface {
+            inputs: vec![InputParam {
+                name: "items".to_string(),
+                param_type: ParamType::Array,
+                required: false,
+                min_length: None,
+                max_length: None,
+                item_schema: None,  // Missing item_schema
+            }],
+            outputs: vec![],
+        }),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("item_schema")));
+}
+
+#[test]
+fn test_any_type_usage() {
+    let rule = super::security::rules::InterfaceBoundaryRule;
+    let skill = SkillSIF {
+        interface: Some(Interface {
+            inputs: vec![InputParam {
+                name: "anything".to_string(),
+                param_type: ParamType::Any,
+                required: false,
+                min_length: None,
+                max_length: None,
+                item_schema: None,
+            }],
+            outputs: vec![],
+        }),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("Any type")));
+}
+
+#[test]
+fn test_missing_output_definitions() {
+    let rule = super::security::rules::InterfaceBoundaryRule;
+    let skill = SkillSIF {
+        interface: Some(Interface {
+            inputs: vec![],
+            outputs: vec![],
+        }),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("output")));
+}
+
 fn create_safe_skill() -> SkillSIF {
     SkillSIF {
         metadata: SifMetadata {
