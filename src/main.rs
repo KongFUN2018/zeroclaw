@@ -451,15 +451,21 @@ async fn main() -> Result<()> {
             );
             println!();
             println!("Channels:");
-            println!("  CLI:      ✅ always");
+            println!("  CLI:         ✅ always");
             for (name, configured) in [
                 ("Telegram", config.channels_config.telegram.is_some()),
                 ("Discord", config.channels_config.discord.is_some()),
                 ("Slack", config.channels_config.slack.is_some()),
                 ("Webhook", config.channels_config.webhook.is_some()),
+                ("iMessage", config.channels_config.imessage.is_some()),
+                ("Matrix", config.channels_config.matrix.is_some()),
+                ("WhatsApp", config.channels_config.whatsapp.is_some()),
+                ("Lark/Feishu", config.channels_config.lark.is_some()),
+                ("Email", config.channels_config.email.is_some()),
+                ("IRC", config.channels_config.irc.is_some()),
             ] {
                 println!(
-                    "  {name:9} {}",
+                    "  {name:13} {}",
                     if configured {
                         "✅ configured"
                     } else {

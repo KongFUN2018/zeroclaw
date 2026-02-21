@@ -850,7 +850,7 @@ async fn lark_webhook_handler(
     let payload = payload.ok_or(StatusCode::BAD_REQUEST)?;
 
     // Parse messages
-    let messages = lark.parse_webhook_payload(&payload);
+    let messages = lark.parse_webhook_payload(&payload).await;
 
     // Process each message
     for msg in messages {

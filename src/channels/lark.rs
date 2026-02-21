@@ -1,5 +1,6 @@
 use super::traits::{Channel, ChannelMessage};
 use async_trait::async_trait;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -27,6 +28,7 @@ pub struct LarkChannel {
     poll_interval: Duration,
     tenant_access_token: Arc<Mutex<Option<String>>>,
     token_expiry: Arc<Mutex<Option<Instant>>>,
+    seen_messages: Arc<Mutex<HashSet<String>>>,
     client: reqwest::Client,
 }
 
@@ -50,6 +52,7 @@ impl LarkChannel {
             poll_interval: Duration::from_secs(5),
             tenant_access_token: Arc::new(Mutex::new(None)),
             token_expiry: Arc::new(Mutex::new(None)),
+            seen_messages: Arc::new(Mutex::new(HashSet::new())),
             client: reqwest::Client::new(),
         }
     }
@@ -87,6 +90,30 @@ impl LarkChannel {
     /// Check if a user is allowed (supports user_id, open_id, union_id)
     fn is_user_allowed(&self, user_id: &str) -> bool {
         self.allowed_users.iter().any(|u| u == "*" || u == user_id)
+    }
+
+    /// Check if a message has already been processed (deduplication)
+    async fn is_message_processed(&self, message_id: &str) -> bool {
+        let mut seen = self.seen_messages.lock().await;
+        if seen.contains(message_id) {
+            tracing::debug!("Lark: skipping duplicate message {}", message_id);
+            true
+        } else {
+            seen.insert(message_id.to_string());
+
+            // Periodically clean up old message IDs to prevent unbounded growth
+            // Keep only the most recent 1000 messages
+            if seen.len() > 1000 {
+                // Remove oldest entries (first 100)
+                let old_ids: Vec<_> = seen.iter().take(100).cloned().collect();
+                for id in old_ids {
+                    seen.remove(&id);
+                }
+                tracing::debug!("Lark: cleaned up old message IDs, current count: {}", seen.len());
+            }
+
+            false
+        }
     }
 
     /// Get or refresh tenant access token (2 hour expiry)
@@ -155,7 +182,7 @@ impl LarkChannel {
 
     /// Parse incoming Lark/Feishu webhook event and extract messages
     /// Supports both "text" and "post" message types (like NullClaw)
-    pub fn parse_webhook_payload(&self, payload: &serde_json::Value) -> Vec<ChannelMessage> {
+    pub async fn parse_webhook_payload(&self, payload: &serde_json::Value) -> Vec<ChannelMessage> {
         let mut messages = Vec::new();
 
         // Check event type
@@ -210,6 +237,12 @@ impl LarkChannel {
             .and_then(|m| m.as_str())
             .map(|s| s.to_string())
             .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        // Check for duplicate message (deduplication)
+        if self.is_message_processed(&message_id).await {
+            tracing::info!("Lark: skipping duplicate message_id {}", message_id);
+            return messages;
+        }
 
         let msg_type = message_obj.get("message_type")
             .and_then(|t| t.as_str())
@@ -574,7 +607,7 @@ impl LarkChannel {
                 for event in events {
                     if let Some(event_type) = event.get("type").and_then(|t| t.as_str()) {
                         if event_type == "im.message.receive_v1" {
-                            let parsed = self.parse_webhook_payload(event);
+                            let parsed = self.parse_webhook_payload(event).await;
                             for msg in parsed {
                                 if tx.send(msg).await.is_err() {
                                     tracing::error!("Failed to send message to channel");
@@ -614,6 +647,7 @@ impl LarkChannel {
             tx: tokio::sync::mpsc::Sender<ChannelMessage>,
             allowed_users: Vec<String>,
             lark_channel: LarkChannel,
+            seen_messages: Arc<Mutex<HashSet<String>>>,
         }
 
         impl EventHandler for ChannelEventHandler {
@@ -678,6 +712,25 @@ impl LarkChannel {
                     .and_then(|m| m.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+                // Check for duplicate message (deduplication)
+                {
+                    let mut seen = self.seen_messages.blocking_lock();
+                    if seen.contains(&message_id) {
+                        tracing::info!("Lark WebSocket: skipping duplicate message_id {}", message_id);
+                        return Ok(());
+                    }
+                    seen.insert(message_id.clone());
+
+                    // Periodically clean up old message IDs to prevent unbounded growth
+                    if seen.len() > 1000 {
+                        let old_ids: Vec<_> = seen.iter().take(100).cloned().collect();
+                        for id in old_ids {
+                            seen.remove(&id);
+                        }
+                        tracing::debug!("Lark WebSocket: cleaned up old message IDs, current count: {}", seen.len());
+                    }
+                }
 
                 let msg_type = message_obj.get("message_type")
                     .and_then(|t| t.as_str())
@@ -746,6 +799,7 @@ impl LarkChannel {
                 self.allowed_users.clone(),
                 self.use_feishu,
             ),
+            seen_messages: Arc::clone(&self.seen_messages),
         });
 
         let ws_client = LarkWebSocketClient::new(
@@ -997,8 +1051,8 @@ mod tests {
         assert!(err.contains("error") || err.contains("failed") || err.contains("connect") || err.contains("http") || err.contains("reqwest"));
     }
 
-    #[test]
-    fn lark_parse_webhook_extracts_text_message() {
+    #[tokio::test]
+    async fn lark_parse_webhook_extracts_text_message() {
         let ch = LarkChannel::new(
             "cli_xxx".into(),
             "secret".into(),
@@ -1032,14 +1086,14 @@ mod tests {
             }
         });
 
-        let messages = ch.parse_webhook_payload(&payload);
+        let messages = ch.parse_webhook_payload(&payload).await;
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].sender, "oc_xxx"); // Use chat_id for sending replies
         assert_eq!(messages[0].content, "Hello, bot!");
     }
 
-    #[test]
-    fn lark_parse_webhook_filters_unauthorized_users() {
+    #[tokio::test]
+    async fn lark_parse_webhook_filters_unauthorized_users() {
         let ch = LarkChannel::new(
             "cli_xxx".into(),
             "secret".into(),
@@ -1073,7 +1127,7 @@ mod tests {
             }
         });
 
-        let messages = ch.parse_webhook_payload(&payload);
+        let messages = ch.parse_webhook_payload(&payload).await;
         assert_eq!(messages.len(), 0); // Unauthorized user filtered out
     }
 
