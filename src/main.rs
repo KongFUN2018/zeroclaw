@@ -39,6 +39,7 @@ use tracing_subscriber::FmtSubscriber;
 
 mod agent;
 mod channels;
+mod commands;
 mod config;
 mod cron;
 mod daemon;
@@ -48,8 +49,8 @@ mod hardware;
 mod health;
 mod heartbeat;
 mod identity;
-mod lark_ws;
 mod integrations;
+mod lark_ws;
 mod memory;
 mod migration;
 mod observability;
@@ -64,6 +65,7 @@ mod tools;
 mod tunnel;
 mod util;
 
+use commands::SkillsCommand;
 use config::Config;
 
 /// `ZeroClaw` - Zero overhead. Zero compromise. 100% Rust.
@@ -195,6 +197,12 @@ enum Commands {
     Integrations {
         #[command(subcommand)]
         integration_command: IntegrationCommands,
+    },
+
+    /// Browse and install skills from ClawHub
+    ClawHubSkills {
+        #[command(subcommand)]
+        skills_command: SkillsCommand,
     },
 
     /// Manage skills (user-defined capabilities)
@@ -498,6 +506,10 @@ async fn main() -> Result<()> {
         Commands::Integrations {
             integration_command,
         } => integrations::handle_command(integration_command, &config),
+
+        Commands::ClawHubSkills { skills_command } => {
+            commands::handle_skills_command(skills_command, &config.workspace_dir)
+        }
 
         Commands::Skills { skill_command } => {
             skills::handle_command(skill_command, &config.workspace_dir)

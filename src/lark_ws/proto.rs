@@ -48,8 +48,10 @@ impl Header {
                     }
                     let mut bytes = vec![0u8; len];
                     buf.copy_to_slice(&mut bytes);
-                    key = Some(String::from_utf8(bytes)
-                        .map_err(|e| format!("Invalid UTF-8 for key: {}", e))?);
+                    key = Some(
+                        String::from_utf8(bytes)
+                            .map_err(|e| format!("Invalid UTF-8 for key: {}", e))?,
+                    );
                 }
                 2 => {
                     // value field
@@ -62,8 +64,10 @@ impl Header {
                     }
                     let mut bytes = vec![0u8; len];
                     buf.copy_to_slice(&mut bytes);
-                    value = Some(String::from_utf8(bytes)
-                        .map_err(|e| format!("Invalid UTF-8 for value: {}", e))?);
+                    value = Some(
+                        String::from_utf8(bytes)
+                            .map_err(|e| format!("Invalid UTF-8 for value: {}", e))?,
+                    );
                 }
                 _ => {
                     // Unknown field, skip it
@@ -241,7 +245,7 @@ impl Frame {
                     // Header::decode returns Result<Option<Header>>
                     match Header::decode(&mut header_buf) {
                         Ok(Some(header)) => frame.headers.push(header),
-                        Ok(None) => {}  // Skip empty/incomplete headers
+                        Ok(None) => {} // Skip empty/incomplete headers
                         Err(e) => {
                             return Err(format!("Failed to decode header: {}", e));
                         }
@@ -250,7 +254,10 @@ impl Frame {
                 6 => {
                     // payload_encoding
                     if wire_type != 2 {
-                        return Err(format!("Invalid wire type for payload_encoding: {}", wire_type));
+                        return Err(format!(
+                            "Invalid wire type for payload_encoding: {}",
+                            wire_type
+                        ));
                     }
                     frame.payload_encoding = decode_string(&mut buf)?;
                 }
@@ -301,9 +308,7 @@ impl Frame {
 
     /// Get header value by key
     pub fn get_header(&self, key: &str) -> Option<&String> {
-        self.headers.iter()
-            .find(|h| h.key == key)
-            .map(|h| &h.value)
+        self.headers.iter().find(|h| h.key == key).map(|h| &h.value)
     }
 
     /// Add or update a header
@@ -367,8 +372,7 @@ fn decode_string<B: Buf>(buf: &mut B) -> Result<String, String> {
     let mut bytes = vec![0u8; len];
     buf.copy_to_slice(&mut bytes);
 
-    String::from_utf8(bytes)
-        .map_err(|e| format!("Invalid UTF-8: {}", e))
+    String::from_utf8(bytes).map_err(|e| format!("Invalid UTF-8: {}", e))
 }
 
 #[cfg(test)]

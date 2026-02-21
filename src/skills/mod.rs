@@ -925,3 +925,10 @@ description = "Bare minimum"
 
 #[cfg(test)]
 mod symlink_tests;
+
+// Complexity analyzer and skill selector
+pub mod complexity;
+pub mod selector;
+
+pub use complexity::ComplexityAnalyzer;
+pub use selector::{DisclosureLevel, SkillSelector};

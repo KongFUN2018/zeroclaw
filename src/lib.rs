@@ -40,6 +40,8 @@ use serde::{Deserialize, Serialize};
 
 pub mod agent;
 pub mod channels;
+pub mod clawhub;
+pub mod commands;
 pub mod config;
 pub mod cron;
 pub mod daemon;
@@ -60,6 +62,7 @@ pub mod runtime;
 pub mod security;
 pub mod service;
 pub mod skills;
+pub mod telemetry;
 pub mod tools;
 pub mod tunnel;
 pub mod util;

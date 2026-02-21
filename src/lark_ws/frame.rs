@@ -76,8 +76,7 @@ impl HeadersExt for Frame {
     }
 
     fn get_header_u64(&self, key: &str) -> Option<u64> {
-        self.get_header(key)
-            .and_then(|v| v.parse::<u64>().ok())
+        self.get_header(key).and_then(|v| v.parse::<u64>().ok())
     }
 
     fn message_type(&self) -> Option<MessageType> {
@@ -97,7 +96,10 @@ impl HeadersExt for Frame {
 /// Create a new ping frame
 pub fn new_ping_frame(service_id: i32) -> Frame {
     let mut frame = Frame::new(service_id, FrameType::Control as i32);
-    frame.set_header(header::TYPE.to_string(), MessageType::Ping.as_str().to_string());
+    frame.set_header(
+        header::TYPE.to_string(),
+        MessageType::Ping.as_str().to_string(),
+    );
     frame
 }
 
@@ -123,11 +125,7 @@ pub fn new_response_frame(
     }
 
     // Build response payload
-    let payload_data = if let Some(d) = data {
-        d
-    } else {
-        vec![]
-    };
+    let payload_data = if let Some(d) = data { d } else { vec![] };
 
     let response_obj = if payload_data.is_empty() {
         serde_json::json!({
@@ -142,7 +140,10 @@ pub fn new_response_frame(
     };
 
     response.payload = serde_json::to_vec(&response_obj).unwrap_or_default();
-    response.set_header(header::TYPE.to_string(), MessageType::Event.as_str().to_string());
+    response.set_header(
+        header::TYPE.to_string(),
+        MessageType::Event.as_str().to_string(),
+    );
 
     response
 }
@@ -178,7 +179,13 @@ mod tests {
         assert_eq!(response.seq_id, 456);
         assert_eq!(response.log_id, 789);
         assert_eq!(response.service, 123);
-        assert_eq!(response.get_header_str(header::MESSAGE_ID), Some("msg_123".to_string()));
-        assert_eq!(response.get_header_str(header::BIZ_RT), Some("100".to_string()));
+        assert_eq!(
+            response.get_header_str(header::MESSAGE_ID),
+            Some("msg_123".to_string())
+        );
+        assert_eq!(
+            response.get_header_str(header::BIZ_RT),
+            Some("100".to_string())
+        );
     }
 }

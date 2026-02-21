@@ -3,16 +3,16 @@
 //! This client implements the official Lark/Feishu WebSocket protocol
 //! including endpoint retrieval, binary frame handling, and heartbeat.
 
+use crate::lark_ws::frame::{new_ping_frame, HeadersExt, MessageType};
 use crate::lark_ws::proto::Frame;
-use crate::lark_ws::frame::{MessageType, HeadersExt, new_ping_frame};
-use anyhow::{Result, Context, anyhow};
+use anyhow::{anyhow, Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde::Deserialize;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio_tungstenite::tungstenite::Message;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 /// Client configuration from server
 #[derive(Debug, Clone, Deserialize)]
@@ -27,10 +27,10 @@ pub struct ClientConfig {
 impl Default for ClientConfig {
     fn default() -> Self {
         Self {
-            reconnect_count: Some(-1),      // Infinite reconnect
-            reconnect_interval: Some(120),   // 2 minutes
-            reconnect_nonce: Some(30),       // 30 seconds random jitter
-            ping_interval: Some(120),        // 2 minutes
+            reconnect_count: Some(-1),     // Infinite reconnect
+            reconnect_interval: Some(120), // 2 minutes
+            reconnect_nonce: Some(30),     // 30 seconds random jitter
+            ping_interval: Some(120),      // 2 minutes
         }
     }
 }
@@ -105,7 +105,8 @@ impl LarkWebSocketClient {
             "AppSecret": self.app_secret
         });
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .json(&body)
             .send()
@@ -122,10 +123,16 @@ impl LarkWebSocketClient {
             .context("Failed to parse endpoint response")?;
 
         if endpoint_resp.code != 0 {
-            return Err(anyhow!("Endpoint error (code {}): {}", endpoint_resp.code, endpoint_resp.msg));
+            return Err(anyhow!(
+                "Endpoint error (code {}): {}",
+                endpoint_resp.code,
+                endpoint_resp.msg
+            ));
         }
 
-        let data = endpoint_resp.data.ok_or_else(|| anyhow!("Missing endpoint data"))?;
+        let data = endpoint_resp
+            .data
+            .ok_or_else(|| anyhow!("Missing endpoint data"))?;
         let config = data.client_config.unwrap_or_default();
 
         Ok((data.url, config))
@@ -133,8 +140,7 @@ impl LarkWebSocketClient {
 
     /// Extract device_id and service_id from WebSocket URL
     fn parse_ws_params(url: &str) -> Result<(String, String)> {
-        let parsed = url::Url::parse(url)
-            .context("Failed to parse WebSocket URL")?;
+        let parsed = url::Url::parse(url).context("Failed to parse WebSocket URL")?;
 
         let device_id = parsed
             .query_pairs()
@@ -169,7 +175,10 @@ impl LarkWebSocketClient {
                     error!("  4. Network connectivity issues");
 
                     let config = self.config.lock().await;
-                    let should_reconnect = config.reconnect_count.map(|c| c < 0 || c > 0).unwrap_or(true);
+                    let should_reconnect = config
+                        .reconnect_count
+                        .map(|c| c < 0 || c > 0)
+                        .unwrap_or(true);
 
                     if !should_reconnect {
                         return Err(e);
@@ -212,19 +221,22 @@ impl LarkWebSocketClient {
         info!("Connecting to WebSocket: {}", ws_url);
 
         // Connect to WebSocket (no auth headers needed)
-        let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url).await
+        let (ws_stream, _) = tokio_tungstenite::connect_async(&ws_url)
+            .await
             .context("Failed to connect to WebSocket")?;
 
-        info!("WebSocket connected (device_id: {}, service_id: {})",
-            self.device_id.lock().await, service_id);
+        info!(
+            "WebSocket connected (device_id: {}, service_id: {})",
+            self.device_id.lock().await,
+            service_id
+        );
 
         debug!("Waiting for messages from WebSocket...");
 
         let (ws_sender, mut ws_receiver) = ws_stream.split();
 
         // Parse service_id for ping frames
-        let service_id_i32 = service_id.parse::<i32>()
-            .unwrap_or(0);
+        let service_id_i32 = service_id.parse::<i32>().unwrap_or(0);
 
         // Spawn ping loop
         let config_clone = self.config.clone();
@@ -240,7 +252,14 @@ impl LarkWebSocketClient {
                 Ok(Message::Binary(data)) => {
                     debug!("Received binary data: {} bytes", data.len());
                     if !data.is_empty() {
-                        debug!("First 100 bytes (hex): {}", &data[..data.len().min(100)].to_vec()[..data.len().min(100)].iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(" "));
+                        debug!(
+                            "First 100 bytes (hex): {}",
+                            &data[..data.len().min(100)].to_vec()[..data.len().min(100)]
+                                .iter()
+                                .map(|b| format!("{:02x}", b))
+                                .collect::<Vec<_>>()
+                                .join(" ")
+                        );
                     }
                     if let Err(e) = self.handle_frame(data, event_handler).await {
                         error!("Error handling frame: {}", e);
@@ -284,9 +303,7 @@ impl LarkWebSocketClient {
     }
 
     /// Ping loop - sends custom ping frames
-    async fn ping_loop<
-        T: futures_util::Sink<Message> + Unpin + Send,
-    >(
+    async fn ping_loop<T: futures_util::Sink<Message> + Unpin + Send>(
         mut sender: T,
         service_id: i32,
         config: Arc<Mutex<ClientConfig>>,
@@ -359,7 +376,10 @@ impl LarkWebSocketClient {
 
                 // Try to parse as JSON
                 if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(json_str) {
-                    debug!("Successfully parsed as JSON: {}", serde_json::to_string(&json_value).unwrap_or_default());
+                    debug!(
+                        "Successfully parsed as JSON: {}",
+                        serde_json::to_string(&json_value).unwrap_or_default()
+                    );
 
                     // Handle as event
                     if let Some(handler) = event_handler {
@@ -378,8 +398,10 @@ impl LarkWebSocketClient {
         let frame_type = frame.method;
         let message_type = frame.message_type();
 
-        debug!("Received frame: method={}, message_type={:?}, headers={:?}",
-            frame_type, message_type, frame.headers);
+        debug!(
+            "Received frame: method={}, message_type={:?}, headers={:?}",
+            frame_type, message_type, frame.headers
+        );
 
         match message_type {
             Some(MessageType::Ping) => {
@@ -392,7 +414,10 @@ impl LarkWebSocketClient {
             }
             Some(MessageType::Event) => {
                 // Handle event message
-                debug!("Processing event message, payload length: {}", frame.payload.len());
+                debug!(
+                    "Processing event message, payload length: {}",
+                    frame.payload.len()
+                );
                 if let Some(handler) = event_handler {
                     let event_json = String::from_utf8_lossy(&frame.payload);
                     debug!("Event JSON: {}", event_json);
@@ -405,7 +430,10 @@ impl LarkWebSocketClient {
                 debug!("Received card callback (not implemented)");
             }
             None => {
-                debug!("Received frame with unknown message type, headers: {:?}", frame.headers);
+                debug!(
+                    "Received frame with unknown message type, headers: {:?}",
+                    frame.headers
+                );
             }
         }
 
