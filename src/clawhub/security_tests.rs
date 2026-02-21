@@ -61,6 +61,49 @@ fn test_safe_prompt_passes() {
     assert!(findings.is_empty());
 }
 
+// Permission consistency tests
+#[test]
+fn test_network_none_but_prompt_has_fetch() {
+    let rule = super::security::rules::PermissionConsistencyRule;
+    let skill = SkillSIF {
+        permissions: Some(Permissions {
+            network: AccessLevel::None,
+            ..Default::default()
+        }),
+        logic: Some(Logic::Prompt(PromptLogic {
+            system: "Help the user".to_string(),
+            user: "Fetch the data from the API".to_string(),
+            model_hint: None,
+            temperature: None,
+        })),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("fetch")));
+}
+
+#[test]
+fn test_filesystem_none_but_prompt_has_read_file() {
+    let rule = super::security::rules::PermissionConsistencyRule;
+    let skill = SkillSIF {
+        permissions: Some(Permissions {
+            filesystem: AccessLevel::None,
+            ..Default::default()
+        }),
+        logic: Some(Logic::Prompt(PromptLogic {
+            system: "Help the user".to_string(),
+            user: "Read the file and analyze it".to_string(),
+            model_hint: None,
+            temperature: None,
+        })),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("file")));
+}
+
 fn create_safe_skill() -> SkillSIF {
     SkillSIF {
         metadata: SifMetadata {
