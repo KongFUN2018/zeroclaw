@@ -3,9 +3,11 @@
 //! Collects and stores local-only usage metrics for skills, tools, and MCPs.
 //! No data is transmitted to the cloud.
 
+pub mod builtin;
 pub mod collector;
 pub mod storage;
 
+pub use builtin::{BuiltinCandidate, BuiltinRecommender, Recommendation, RecommendationThresholds};
 pub use collector::TelemetryCollector;
 pub use storage::{TelemetryEvent, TelemetryStorage};
 
