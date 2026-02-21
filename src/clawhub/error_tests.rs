@@ -1,4 +1,4 @@
-use super::error::{ClawHubError, Result};
+use super::error::ClawHubError;
 
 #[test]
 fn test_skill_not_found_error() {
