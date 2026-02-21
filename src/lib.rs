@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod agent;
 pub mod channels;
+pub mod clawhub;
 pub mod config;
 pub mod cron;
 pub mod daemon;
