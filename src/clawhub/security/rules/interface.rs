@@ -1,5 +1,5 @@
 use super::{CheckError, SecurityRule};
-use crate::clawhub::sif::{Interface, ParamType, SkillSIF};
+use crate::clawhub::sif::{ParamType, SkillSIF};
 use crate::clawhub::security::report::{Finding, Severity};
 
 pub struct InterfaceBoundaryRule;

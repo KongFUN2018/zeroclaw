@@ -34,7 +34,8 @@ impl SkillKeyPair {
 
     /// Get the public key as base64 string
     pub fn public_key_base64(&self) -> String {
-        base64::encode(self.verifying_key().as_bytes())
+        use base64::prelude::*;
+        BASE64_STANDARD.encode(self.verifying_key().as_bytes())
     }
 
     /// Export secret key as bytes

@@ -65,7 +65,7 @@ mod tools;
 mod tunnel;
 mod util;
 
-use commands::SkillsCommand;
+use commands::{SecurityCommands, SkillsCommand};
 use config::Config;
 
 /// `ZeroClaw` - Zero overhead. Zero compromise. 100% Rust.
@@ -203,6 +203,12 @@ enum Commands {
     ClawHubSkills {
         #[command(subcommand)]
         skills_command: SkillsCommand,
+    },
+
+    /// Security scanning and verification
+    Security {
+        #[command(subcommand)]
+        security_command: SecurityCommands,
     },
 
     /// Manage skills (user-defined capabilities)
@@ -509,6 +515,10 @@ async fn main() -> Result<()> {
 
         Commands::ClawHubSkills { skills_command } => {
             commands::handle_skills_command(skills_command, &config.workspace_dir)
+        }
+
+        Commands::Security { security_command } => {
+            commands::handle_security_command(security_command).await
         }
 
         Commands::Skills { skill_command } => {
