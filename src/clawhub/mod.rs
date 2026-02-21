@@ -5,6 +5,7 @@ pub mod hotload;
 pub mod registry;
 pub mod sif;
 pub mod types;
+pub mod security;
 
 #[cfg(test)]
 mod detector_tests;
@@ -12,6 +13,8 @@ mod detector_tests;
 mod error_tests;
 #[cfg(test)]
 mod sif_tests;
+#[cfg(test)]
+mod security_tests;
 
 pub use cache::ClawHubCache;
 pub use detectors::{Detector, DetectorRegistry, ZeroClawDetector};
@@ -26,3 +29,6 @@ pub use sif::{
     Dependency, TestCase, Compatibility, Signature,
 };
 pub use types::{ClawHubIndex, SkillIndexEntry};
+pub use security::{SecurityScanner, SecurityReport, Finding, Severity, SecurityRule,
+                  PromptSafetyRule, PermissionConsistencyRule, CodeExecutionRiskRule,
+                  InterfaceBoundaryRule, DependencyChainRule};
