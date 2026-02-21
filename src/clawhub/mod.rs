@@ -4,6 +4,7 @@ pub mod error;
 pub mod hotload;
 pub mod registry;
 pub mod sif;
+pub mod signature;
 pub mod types;
 pub mod security;
 
@@ -28,6 +29,7 @@ pub use sif::{
     ChainStep, ParamType, InputParam, OutputParam, Interface,
     Dependency, TestCase, Compatibility, Signature,
 };
+pub use signature::{SkillKeyPair, SignatureVerification, sign_skill, verify_skill_signature, verify_sif_signature};
 pub use types::{ClawHubIndex, SkillIndexEntry};
 pub use security::{SecurityScanner, SecurityReport, Finding, Severity, SecurityRule,
                   PromptSafetyRule, PermissionConsistencyRule, CodeExecutionRiskRule,
