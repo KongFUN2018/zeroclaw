@@ -1,3 +1,27 @@
+//! Claw skill format detectors
+//!
+//! This module provides detectors for different Claw project skill formats.
+//! Each detector implements the `Detector` trait to identify and parse
+//! skills from various Claw projects (OpenClaw, NanoBot, PicoClaw, NullClaw, etc.)
+//! into the unified Skill Intermediate Format (SIF).
+//!
+//! # Current Implementation
+//!
+//! - **ZeroClawDetector**: Parses ZeroClaw's SKILL.toml format
+//!
+//! # Future Detectors (Out of Scope for Initial Implementation)
+//!
+//! The following detectors are planned but not yet implemented:
+//!
+//! - **OpenClawDetector**: TypeScript/YAML-based skill format
+//! - **NanoBotDetector**: Python dict-based skill format
+//! - **PicoClawDetector**: Go/YAML-based skill format
+//! - **NullClawDetector**: Zig/JSON-based skill format
+//!
+//! These will be added as needed when actual cross-project skill sharing
+//! becomes a requirement. The architecture supports easy addition via
+//! the `Detector` trait.
+
 use crate::clawhub::{Result, SkillSIF};
 use async_trait::async_trait;
 use std::path::Path;

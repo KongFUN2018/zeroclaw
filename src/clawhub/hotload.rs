@@ -191,6 +191,19 @@ impl SkillHotLoader {
         for path in &event.paths {
             // Check if the path is within the skills directory
             if let Ok(rel_path) = path.strip_prefix(skills_dir) {
+                // Security: Verify no path traversal components in relative path
+                // This prevents symlink-based escapes outside the skills directory
+                if rel_path
+                    .components()
+                    .any(|c| c == std::path::Component::ParentDir)
+                {
+                    warn!(
+                        "Path traversal attempt detected: {} contains '..' components",
+                        path.display()
+                    );
+                    continue;
+                }
+
                 // Check if it's a SKILL.toml or SKILL.md file
                 if let Some(file_name) = path.file_name() {
                     let name = file_name.to_string_lossy();

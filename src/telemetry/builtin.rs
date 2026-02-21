@@ -5,7 +5,7 @@
 
 use crate::telemetry::storage::{ComponentStats, EventType, TelemetryStorage};
 use anyhow::Result;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 
 /// Thresholds for builtin recommendations
 #[derive(Debug, Clone)]
