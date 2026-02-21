@@ -618,7 +618,7 @@ impl LarkChannel {
 
         impl EventHandler for ChannelEventHandler {
             fn handle_event(&self, event_json: &str) -> anyhow::Result<()> {
-                tracing::debug!("Lark WebSocket event received: {}", event_json);
+                tracing::info!("Lark WebSocket event received: {}", event_json);
 
                 // Parse the event JSON
                 let event: serde_json::Value = serde_json::from_str(event_json)
@@ -628,16 +628,29 @@ impl LarkChannel {
                 // Webhook format: { "schema": "2.0", "header": {...}, "event": {...} }
                 // Long connection format: { ... } (direct event data)
                 let event_data = if event.get("event").is_some() {
-                    tracing::debug!("Event format: wrapped (webhook-style)");
+                    tracing::info!("Event format: wrapped (webhook-style)");
                     event.get("event")
                 } else if event.get("header").is_some() {
-                    tracing::debug!("Event format: webhook with header");
+                    tracing::info!("Event format: webhook with header");
                     event.get("event").or_else(|| Some(&event))
                 } else {
-                    tracing::debug!("Event format: unwrapped (direct event data)");
+                    tracing::info!("Event format: unwrapped (direct event data)");
                     // Assume the entire JSON is the event data
                     Some(&event)
                 }.ok_or_else(|| anyhow::anyhow!("Missing event data"))?;
+
+                // Check event type from header
+                let event_type = event.get("header")
+                    .and_then(|h| h.get("event_type"))
+                    .and_then(|t| t.as_str());
+
+                // Only process message events, skip others (read receipts, etc.)
+                if event_type != Some("im.message.receive_v1") {
+                    tracing::debug!("Skipping non-message event: {:?}", event_type);
+                    return Ok(());
+                }
+
+                tracing::info!("Event data: {}", serde_json::to_string(event_data).unwrap_or_default());
 
                 // NOTE: Use open_id instead of user_id (matches NullClaw)
                 let sender_open_id = event_data.get("sender")
