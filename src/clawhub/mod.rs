@@ -18,5 +18,11 @@ pub use detectors::{Detector, DetectorRegistry, ZeroClawDetector};
 pub use error::{ClawHubError, Result};
 pub use hotload::SkillHotLoader;
 pub use registry::ClawHubClient;
-pub use sif::{SifMetadata, SkillSIF, ToolSIF};
+pub use sif::{
+    SifMetadata, SkillSIF, ToolSIF,
+    // Extended SIF types
+    AccessLevel, Permissions, Logic, PromptLogic, CodeLogic, HybridLogic, ChainLogic,
+    ChainStep, ParamType, InputParam, OutputParam, Interface,
+    Dependency, TestCase, Compatibility, Signature,
+};
 pub use types::{ClawHubIndex, SkillIndexEntry};
