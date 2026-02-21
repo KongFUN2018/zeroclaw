@@ -3,6 +3,7 @@
 //! Monitors the skills directory for changes and automatically reloads skills
 //! without requiring a restart of the ZeroClaw daemon.
 
+use crate::clawhub::security::{SecurityScanner, SecurityReport};
 use crate::skills::Skill;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -26,6 +27,10 @@ pub struct SkillHotLoader {
     skills_cache: Arc<RwLock<HashMap<String, Skill>>>,
     /// Running state
     running: Arc<RwLock<bool>>,
+    /// Security scanner for ClawHub skills (optional)
+    security_scanner: Arc<RwLock<Option<SecurityScanner>>>,
+    /// Whether to enforce security checks
+    enforce_security: Arc<RwLock<bool>>,
 }
 
 impl SkillHotLoader {
@@ -35,6 +40,44 @@ impl SkillHotLoader {
             skills_dir,
             skills_cache: Arc::new(RwLock::new(HashMap::new())),
             running: Arc::new(RwLock::new(false)),
+            security_scanner: Arc::new(RwLock::new(None)),
+            enforce_security: Arc::new(RwLock::new(false)),
+        }
+    }
+
+    /// Enable security scanning for ClawHub skills
+    pub async fn enable_security_scanning(&self, enforce: bool) {
+        let mut scanner = self.security_scanner.write().await;
+        *scanner = Some(SecurityScanner::new());
+        *self.enforce_security.write().await = enforce;
+        info!("Security scanning enabled (enforce={})", enforce);
+    }
+
+    /// Disable security scanning
+    pub async fn disable_security_scanning(&self) {
+        let mut scanner = self.security_scanner.write().await;
+        *scanner = None;
+        *self.enforce_security.write().await = false;
+        info!("Security scanning disabled");
+    }
+
+    /// Check if a SIF skill passes security checks
+    pub async fn scan_sif_skill(&self, sif: &crate::clawhub::sif::SkillSIF) -> Result<Option<SecurityReport>, String> {
+        let scanner = self.security_scanner.read().await;
+        let scanner = match scanner.as_ref() {
+            Some(s) => s,
+            None => return Ok(None), // Security not enabled
+        };
+
+        match scanner.scan(sif) {
+            Ok(report) => {
+                let enforce = *self.enforce_security.read().await;
+                if enforce && !report.is_safe() {
+                    return Err(format!("Security check failed: {} findings", report.findings.len()));
+                }
+                Ok(Some(report))
+            }
+            Err(e) => Err(format!("Security scan error: {}", e)),
         }
     }
 
