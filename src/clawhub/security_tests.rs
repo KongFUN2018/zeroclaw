@@ -104,6 +104,55 @@ fn test_filesystem_none_but_prompt_has_read_file() {
     assert!(findings.iter().any(|f| f.message.contains("file")));
 }
 
+// Code execution risk tests
+#[test]
+fn test_detects_python_eval() {
+    let rule = super::security::rules::CodeExecutionRiskRule;
+    let skill = SkillSIF {
+        logic: Some(Logic::Code(CodeLogic {
+            runtime: "python".to_string(),
+            source: Some("result = eval(user_input)".to_string()),
+            ..Default::default()
+        })),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("eval(")));
+}
+
+#[test]
+fn test_detects_os_system() {
+    let rule = super::security::rules::CodeExecutionRiskRule;
+    let skill = SkillSIF {
+        logic: Some(Logic::Code(CodeLogic {
+            runtime: "python".to_string(),
+            source: Some("import os\nos.system(user_cmd)".to_string()),
+            ..Default::default()
+        })),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.iter().any(|f| f.message.contains("os.system") || f.message.contains("subprocess")));
+}
+
+#[test]
+fn test_safe_code_passes() {
+    let rule = super::security::rules::CodeExecutionRiskRule;
+    let skill = SkillSIF {
+        logic: Some(Logic::Code(CodeLogic {
+            runtime: "python".to_string(),
+            source: Some("def add(a, b):\n    return a + b".to_string()),
+            ..Default::default()
+        })),
+        ..skill_with_prompt("")
+    };
+
+    let findings = rule.check(&skill).unwrap();
+    assert!(findings.is_empty() || findings.iter().all(|f| f.severity != Severity::Critical));
+}
+
 fn create_safe_skill() -> SkillSIF {
     SkillSIF {
         metadata: SifMetadata {

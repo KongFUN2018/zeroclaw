@@ -65,6 +65,17 @@ pub struct CodeLogic {
     pub source: Option<String>,
 }
 
+impl Default for CodeLogic {
+    fn default() -> Self {
+        Self {
+            runtime: String::new(),
+            entrypoint: None,
+            function_name: None,
+            source: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HybridLogic {
     #[serde(skip_serializing_if = "Option::is_none")]
