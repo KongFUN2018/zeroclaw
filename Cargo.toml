@@ -39,6 +39,9 @@ prometheus = { version = "0.14", default-features = false }
 # Base64 encoding (screenshots, image data)
 base64 = "0.22"
 
+# Regex for security pattern matching
+regex = "1.11"
+
 # Optional Rust-native browser automation backend
 fantoccini = { version = "0.22.0", optional = true, default-features = false, features = ["rustls-tls"] }
 
