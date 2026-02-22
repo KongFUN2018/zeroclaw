@@ -749,27 +749,34 @@ impl LarkChannel {
                     .unwrap_or_else(|| Uuid::new_v4().to_string());
 
                 // Check for duplicate message (deduplication)
+                // Use a non-blocking attempt to acquire the async mutex to avoid
+                // blocking the current thread inside the async runtime. If the
+                // lock is not immediately available, skip deduplication for this
+                // event to prevent a runtime panic.
                 {
-                    let mut seen = self.seen_messages.blocking_lock();
-                    if seen.contains(&message_id) {
-                        tracing::info!(
-                            "Lark WebSocket: skipping duplicate message_id {}",
-                            message_id
-                        );
-                        return Ok(());
-                    }
-                    seen.insert(message_id.clone());
-
-                    // Periodically clean up old message IDs to prevent unbounded growth
-                    if seen.len() > 1000 {
-                        let old_ids: Vec<_> = seen.iter().take(100).cloned().collect();
-                        for id in old_ids {
-                            seen.remove(&id);
+                    if let Ok(mut seen) = self.seen_messages.try_lock() {
+                        if seen.contains(&message_id) {
+                            tracing::info!(
+                                "Lark WebSocket: skipping duplicate message_id {}",
+                                message_id
+                            );
+                            return Ok(());
                         }
-                        tracing::debug!(
-                            "Lark WebSocket: cleaned up old message IDs, current count: {}",
-                            seen.len()
-                        );
+                        seen.insert(message_id.clone());
+
+                        // Periodically clean up old message IDs to prevent unbounded growth
+                        if seen.len() > 1000 {
+                            let old_ids: Vec<_> = seen.iter().take(100).cloned().collect();
+                            for id in old_ids {
+                                seen.remove(&id);
+                            }
+                            tracing::debug!(
+                                "Lark WebSocket: cleaned up old message IDs, current count: {}",
+                                seen.len()
+                            );
+                        }
+                    } else {
+                        tracing::warn!("Lark WebSocket: seen_messages lock busy; skipping deduplication for this event");
                     }
                 }
 

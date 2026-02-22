@@ -514,7 +514,7 @@ async fn main() -> Result<()> {
         } => integrations::handle_command(integration_command, &config),
 
         Commands::ClawHubSkills { skills_command } => {
-            commands::handle_skills_command(skills_command, &config.workspace_dir)
+            commands::handle_skills_command(skills_command, &config.workspace_dir).await
         }
 
         Commands::Security { security_command } => {
