@@ -2,6 +2,10 @@ use anyhow::Result;
 use std::path::Path;
 use tracing::info;
 
+// These types are from the library's clawhub module
+// When compiling as the binary, we access them via zeroclaw::
+use zeroclaw::clawhub::{SecurityScanner, SkillKeyPair, verify_skill_signature, SkillSIF};
+
 #[derive(clap::Subcommand, Debug, Clone)]
 pub enum SecurityCommands {
     /// Scan a skill for security issues
@@ -57,10 +61,10 @@ fn scan_skill(path: &Path, format: &str) -> Result<()> {
     let sif: serde_json::Value = serde_json::from_str(&sif_json)?;
 
     // Convert to SkillSIF
-    let skill_sif: crate::clawhub::SkillSIF = serde_json::from_value(sif)?;
+    let skill_sif: SkillSIF = serde_json::from_value(sif)?;
 
     // Run security scan
-    let scanner = crate::clawhub::SecurityScanner::new();
+    let scanner = SecurityScanner::new();
     let report = scanner.scan(&skill_sif)
         .map_err(|e| anyhow::anyhow!("Security scan error: {}", e))?;
 
@@ -94,7 +98,7 @@ fn scan_skill(path: &Path, format: &str) -> Result<()> {
 
 fn generate_keypair(output: &Option<std::path::PathBuf>) -> Result<()> {
     info!("Generating new Ed25519 key pair");
-    let keypair = crate::clawhub::SkillKeyPair::generate();
+    let keypair = SkillKeyPair::generate();
     let public_key = keypair.public_key_hex();
 
     if let Some(path) = output {
@@ -117,7 +121,7 @@ fn verify_signature(path: &Path, author_key: Option<String>, market_key: Option<
     info!("Verifying signature for: {}", path.display());
 
     let sif_json = std::fs::read_to_string(path)?;
-    let sif: crate::clawhub::SkillSIF = serde_json::from_str(&sif_json)?;
+    let sif: SkillSIF = serde_json::from_str(&sif_json)?;
 
     let signature = match &sif.signature {
         Some(s) => s,
@@ -131,7 +135,7 @@ fn verify_signature(path: &Path, author_key: Option<String>, market_key: Option<
 
     if let Some(author_sig) = &signature.author_signature {
         if let Some(ref key) = author_key {
-            match crate::clawhub::verify_skill_signature(sif_json.as_bytes(), author_sig, key) {
+            match verify_skill_signature(sif_json.as_bytes(), author_sig, key) {
                 Ok(true) => println!("✓ Author signature: VALID"),
                 Ok(false) | Err(_) => {
                     println!("✗ Author signature: INVALID");
@@ -145,7 +149,7 @@ fn verify_signature(path: &Path, author_key: Option<String>, market_key: Option<
 
     if let Some(market_sig) = &signature.market_signature {
         if let Some(ref key) = market_key {
-            match crate::clawhub::verify_skill_signature(sif_json.as_bytes(), market_sig, key) {
+            match verify_skill_signature(sif_json.as_bytes(), market_sig, key) {
                 Ok(true) => println!("✓ Market signature: VALID"),
                 Ok(false) | Err(_) => {
                     println!("✗ Market signature: INVALID");
