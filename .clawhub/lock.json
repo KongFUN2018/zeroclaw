@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "skills": {
+    "trello": {
+      "version": "1.0.0",
+      "installedAt": 1771773536077
+    },
+    "gog": {
+      "version": "1.0.0",
+      "installedAt": 1771773868600
+    }
+  }
+}

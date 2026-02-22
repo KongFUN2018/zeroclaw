@@ -25,6 +25,11 @@ pub enum SkillsCommand {
         /// Skill name
         name: String,
     },
+    /// Install a skill from ClawHub
+    Install {
+        /// Skill slug (e.g., "steipete/trello" or just "trello")
+        name: String,
+    },
 }
 
 /// Format skill entry for display
@@ -200,6 +205,46 @@ pub async fn handle_skills_command(
                 println!("\nUse \x1b[1;36mzeroclaw claw-hub-skills search {}\x1b[0m to search for similar skills", name);
                 println!("Or visit: https://clawhub.ai/skills");
                 Ok(())
+            }
+        }
+        SkillsCommand::Install { name } => {
+            println!("Installing skill '\x1b[1;33m{}\x1b[0m' from ClawHub...", name);
+            println!();
+
+            let name_clone = name.clone();
+            let workspace_dir_clone = _workspace_dir.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                let scraper = zeroclaw::clawhub::ClawHubScraper::new()?;
+                scraper.install_skill(&name_clone, &workspace_dir_clone)
+            })
+            .await?;
+
+            match result {
+                Ok(skill_path) => {
+                    println!(
+                        "\x1b[1;32m✓\x1b[0m Skill installed successfully!\n",
+                    );
+                    println!("  Location: {}", skill_path.display());
+                    println!("\nSkill will be available after restarting ZeroClaw.");
+                    println!("Or use \x1b[1;36mzeroclaw skills list\x1b[0m to see all installed skills.");
+                    Ok(())
+                }
+                Err(e) => {
+                    let error_msg = e.to_string();
+                    if error_msg.contains("Missing dependency") || error_msg.contains("clawhub CLI") {
+                        eprintln!("\x1b[1;31m✗\x1b[0m clawhub CLI is not installed");
+                        eprintln!("\nTo use this feature, install the clawhub CLI:");
+                        eprintln!("  npm install -g clawhub");
+                        eprintln!("\nAlternatively, you can:");
+                        println!("  1. Visit https://clawhub.ai/skills");
+                        println!("  2. Find the skill's GitHub repository");
+                        println!("  3. Install with: zeroclaw skills install <github-url>");
+                    } else {
+                        eprintln!("\x1b[1;31m✗\x1b[0m Failed to install skill: {}", e);
+                        eprintln!("\nTip: Make sure the skill name is correct (e.g., 'steipete/trello' or 'trello')");
+                    }
+                    Err(e.into())
+                }
             }
         }
     }

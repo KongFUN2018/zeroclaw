@@ -235,6 +235,90 @@ impl ClawHubScraper {
                 || s.repository.ends_with(&format!("/{}", name.replace('-', "_")))
         }).cloned())
     }
+
+    /// Install a skill from ClawHub to the local workspace
+    pub fn install_skill(&self, name: &str, workspace_dir: &std::path::Path) -> Result<std::path::PathBuf> {
+        use crate::clawhub::ClawHubError;
+
+        // clawhub CLI installs directly to --dir, so we need to target the skills directory
+        let skills_dir = workspace_dir.join("skills");
+
+        // Ensure the skills directory exists
+        std::fs::create_dir_all(&skills_dir).map_err(|e| ClawHubError::IoError(e))?;
+
+        let cmd = if cfg!(windows) { "clawhub.cmd" } else { "clawhub" };
+
+        // Use clawhub CLI to install the skill to the skills directory
+        let output = Command::new(cmd)
+            .arg("install")
+            .arg(name)
+            .arg("--dir")
+            .arg(&skills_dir)
+            .output()
+            .map_err(|e| ClawHubError::InvalidFormat {
+                file: "clawhub CLI".to_string(),
+                reason: format!("Failed to execute: {}", e),
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(ClawHubError::InvalidFormat {
+                file: "clawhub CLI".to_string(),
+                reason: format!("CLI error: {}", stderr),
+            });
+        }
+
+        // Parse the output to find where the skill was installed
+        let _stdout = String::from_utf8_lossy(&output.stdout);
+
+        // The skill is installed to skills_dir/<skill-name>
+        // Try to find the skill directory
+        let installed_path = self.find_installed_skill_path(&skills_dir, name).unwrap_or_else(|| {
+            // Fallback: try to construct the path from the slug
+            skills_dir.join(name.replace('/', "__"))
+        });
+
+        Ok(installed_path)
+    }
+
+    /// Find the actual installed skill directory path
+    fn find_installed_skill_path(&self, skills_dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+        // Try exact match first
+        let exact_path = skills_dir.join(name);
+        if exact_path.exists() {
+            return Some(exact_path);
+        }
+
+        // Try with owner prefix (e.g., "steipete/trello")
+        if name.contains('/') {
+            let parts: Vec<&str> = name.split('/').collect();
+            if parts.len() == 2 {
+                let skill_name = parts[1];
+                let with_owner = skills_dir.join(skill_name);
+                if with_owner.exists() {
+                    return Some(with_owner);
+                }
+            }
+        }
+
+        // Try by searching subdirectories
+        if let Ok(entries) = std::fs::read_dir(skills_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if dir_name.eq_ignore_ascii_case(name)
+                        || dir_name.eq_ignore_ascii_case(&name.replace('-', "_"))
+                        || dir_name.contains(&name.to_lowercase())
+                    {
+                        return Some(path);
+                    }
+                }
+            }
+        }
+
+        None
+    }
 }
 
 impl Default for ClawHubScraper {
