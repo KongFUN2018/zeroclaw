@@ -83,6 +83,13 @@ impl Detector for ZeroClawDetector {
             metadata,
             tools,
             content,
+            permissions: None,
+            logic: None,
+            interface: None,
+            dependencies: None,
+            tests: None,
+            compatibility: None,
+            signature: None,
         })
     }
 
